@@ -1,12 +1,93 @@
 import { sql } from "./client";
-import type { FileRecord, MediaType, User } from "./types";
+import type { FileRecord, Folder, MediaType, User } from "./types";
 
 export async function listUsers(): Promise<User[]> {
   return sql<User[]>`select id, email, name, created_at from users order by name`;
 }
 
-export async function listFiles(): Promise<FileRecord[]> {
-  return sql<FileRecord[]>`select * from files order by created_at desc`;
+// --- Folders ---
+
+export async function getFolder(id: string): Promise<Folder | null> {
+  const rows = await sql<Folder[]>`select * from folders where id = ${id} limit 1`;
+  return rows[0] ?? null;
+}
+
+export async function listFolders(parentId: string | null): Promise<Folder[]> {
+  return parentId === null
+    ? sql<Folder[]>`select * from folders where parent_id is null order by name`
+    : sql<Folder[]>`select * from folders where parent_id = ${parentId} order by name`;
+}
+
+export async function listAllFolders(): Promise<Folder[]> {
+  return sql<Folder[]>`select * from folders order by name`;
+}
+
+// Ancestor chain from root to the given folder (inclusive), for breadcrumbs.
+export async function getFolderPath(id: string): Promise<Folder[]> {
+  const rows = await sql<Folder[]>`
+    with recursive path as (
+      select * from folders where id = ${id}
+      union all
+      select f.* from folders f inner join path p on f.id = p.parent_id
+    )
+    select * from path
+  `;
+  return rows.reverse();
+}
+
+export async function createFolder(input: {
+  name: string;
+  parentId: string | null;
+}): Promise<Folder> {
+  const rows = await sql<Folder[]>`
+    insert into folders (name, parent_id) values (${input.name}, ${input.parentId})
+    returning *
+  `;
+  return rows[0];
+}
+
+export async function renameFolder(id: string, name: string): Promise<Folder | null> {
+  const rows = await sql<Folder[]>`
+    update folders set name = ${name} where id = ${id} returning *
+  `;
+  return rows[0] ?? null;
+}
+
+export async function moveFolder(id: string, parentId: string | null): Promise<Folder | null> {
+  const rows = await sql<Folder[]>`
+    update folders set parent_id = ${parentId} where id = ${id} returning *
+  `;
+  return rows[0] ?? null;
+}
+
+// True if candidateId is rootId itself or one of rootId's descendants —
+// used to reject moves that would turn a folder into its own ancestor.
+export async function isFolderOrDescendant(rootId: string, candidateId: string): Promise<boolean> {
+  const rows = await sql<{ id: string }[]>`
+    with recursive descendants as (
+      select id from folders where id = ${rootId}
+      union all
+      select f.id from folders f inner join descendants d on f.parent_id = d.id
+    )
+    select id from descendants where id = ${candidateId}
+  `;
+  return rows.length > 0;
+}
+
+export async function deleteFolder(id: string): Promise<void> {
+  await sql`delete from folders where id = ${id}`;
+}
+
+// --- Files ---
+
+export async function listFiles(folderId: string | null): Promise<FileRecord[]> {
+  return folderId === null
+    ? sql<FileRecord[]>`
+        select * from files where folder_id is null and deleted_at is null order by created_at desc
+      `
+    : sql<FileRecord[]>`
+        select * from files where folder_id = ${folderId} and deleted_at is null order by created_at desc
+      `;
 }
 
 export async function createFile(input: {
@@ -31,4 +112,31 @@ export async function createFile(input: {
   `;
 
   return rows[0];
+}
+
+export async function renameFile(id: string, displayName: string): Promise<FileRecord | null> {
+  const rows = await sql<FileRecord[]>`
+    update files set display_name = ${displayName}
+    where id = ${id} and deleted_at is null
+    returning *
+  `;
+  return rows[0] ?? null;
+}
+
+export async function moveFile(id: string, folderId: string | null): Promise<FileRecord | null> {
+  const rows = await sql<FileRecord[]>`
+    update files set folder_id = ${folderId}
+    where id = ${id} and deleted_at is null
+    returning *
+  `;
+  return rows[0] ?? null;
+}
+
+export async function softDeleteFile(id: string): Promise<FileRecord | null> {
+  const rows = await sql<FileRecord[]>`
+    update files set deleted_at = now()
+    where id = ${id} and deleted_at is null
+    returning *
+  `;
+  return rows[0] ?? null;
 }

@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { createFile, listFiles } from "@/lib/db/queries";
 import { mediaTypeFromContentType } from "@/lib/media";
+import { parseNullableIdParam } from "@/lib/id-param";
 
-export async function GET() {
-  const files = await listFiles();
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const folderId = parseNullableIdParam(searchParams.get("folderId"));
+  const files = await listFiles(folderId);
   return NextResponse.json({ files });
 }
 

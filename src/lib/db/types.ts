@@ -7,6 +7,14 @@ export type User = {
 
 export type MediaType = "video" | "image";
 
+export type Folder = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  owner_id: string | null;
+  created_at: string;
+};
+
 export type FileRecord = {
   id: string;
   folder_id: string | null;
@@ -21,4 +29,5 @@ export type FileRecord = {
   width: number | null;
   height: number | null;
   created_at: string;
+  deleted_at: string | null;
 };

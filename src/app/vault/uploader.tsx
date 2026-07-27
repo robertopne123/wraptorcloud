@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useRef, useState, type ChangeEvent, type DragEvent } from "react";
-import { useSearchParams } from "next/navigation";
 import type { FileRecord } from "@/lib/db/types";
 
 type UploadStatus = "uploading" | "done" | "failed";
@@ -13,14 +12,6 @@ type UploadItem = {
   status: UploadStatus;
   error?: string;
 };
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const value = bytes / 1024 ** exponent;
-  return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
-}
 
 function uploadWithProgress(uploadUrl: string, file: File, onProgress: (percent: number) => void) {
   return new Promise<void>((resolve, reject) => {
@@ -48,12 +39,14 @@ function uploadWithProgress(uploadUrl: string, file: File, onProgress: (percent:
   });
 }
 
-export function UploadDashboard({ initialFiles }: { initialFiles: FileRecord[] }) {
-  const searchParams = useSearchParams();
-  const folderId = searchParams.get("folderId");
-
+export function Uploader({
+  folderId,
+  onUploaded,
+}: {
+  folderId: string | null;
+  onUploaded: (file: FileRecord) => void;
+}) {
   const [uploads, setUploads] = useState<UploadItem[]>([]);
-  const [files, setFiles] = useState<FileRecord[]>(initialFiles);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -106,7 +99,7 @@ export function UploadDashboard({ initialFiles }: { initialFiles: FileRecord[] }
 
         const { file: created } = await createRes.json();
 
-        setFiles((prev) => [created, ...prev]);
+        onUploaded(created);
         updateUpload(item.id, { status: "done", progress: 100 });
       } catch (error) {
         updateUpload(item.id, {
@@ -115,7 +108,7 @@ export function UploadDashboard({ initialFiles }: { initialFiles: FileRecord[] }
         });
       }
     },
-    [folderId, updateUpload],
+    [folderId, onUploaded, updateUpload],
   );
 
   const addFiles = useCallback(
@@ -155,14 +148,7 @@ export function UploadDashboard({ initialFiles }: { initialFiles: FileRecord[] }
   );
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 bg-zinc-50 px-4 py-10 dark:bg-black">
-      <div>
-        <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Wraptor Vault</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Upload footage {folderId ? `to folder ${folderId}` : "to the root library"}.
-        </p>
-      </div>
-
+    <div className="flex flex-col gap-3">
       <div
         onDragOver={(event) => {
           event.preventDefault();
@@ -170,7 +156,7 @@ export function UploadDashboard({ initialFiles }: { initialFiles: FileRecord[] }
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        className={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-10 text-center transition ${
+        className={`flex items-center justify-between gap-3 rounded-xl border-2 border-dashed px-4 py-3 transition ${
           isDragging
             ? "border-zinc-500 bg-zinc-100 dark:bg-zinc-900"
             : "border-zinc-300 dark:border-zinc-700"
@@ -182,7 +168,7 @@ export function UploadDashboard({ initialFiles }: { initialFiles: FileRecord[] }
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+          className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
         >
           Choose files
         </button>
@@ -197,8 +183,7 @@ export function UploadDashboard({ initialFiles }: { initialFiles: FileRecord[] }
       </div>
 
       {uploads.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Uploads</h2>
+        <div className="flex flex-col gap-2">
           {uploads.map((item) => (
             <div key={item.id} className="rounded-lg border border-zinc-200 p-3 dark:border-zinc-800">
               <div className="mb-2 flex items-center justify-between text-sm">
@@ -231,24 +216,6 @@ export function UploadDashboard({ initialFiles }: { initialFiles: FileRecord[] }
           ))}
         </div>
       )}
-
-      <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Files</h2>
-        {files.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">No files yet.</p>
-        ) : (
-          <ul className="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-            {files.map((file) => (
-              <li key={file.id} className="flex items-center justify-between px-3 py-2 text-sm">
-                <span className="truncate text-zinc-800 dark:text-zinc-200">{file.display_name}</span>
-                <span className="ml-2 shrink-0 text-zinc-500 dark:text-zinc-400">
-                  {file.media_type} · {formatBytes(Number(file.size_bytes))}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }
