@@ -1,6 +1,5 @@
 import { S3Client } from "@aws-sdk/client-s3";
 
-// Not used yet — wired up for Stage 2 (upload/presigned URLs).
 export const s3Client = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
