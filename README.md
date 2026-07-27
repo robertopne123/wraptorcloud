@@ -3,18 +3,19 @@
 Internal media asset manager for uploading, organizing, and sharing video/image
 footage.
 
-**Stage 3 (this stage):** file browser UI — folder navigation, a file grid,
-and organize actions (create/rename/move/delete folders and files). Media
-playback is still not built; clicking a file thumbnail shows a "preview
-coming soon" notice (Stage 4). There is no authentication — every route is
-open.
+**Stage 4 (this stage):** media viewer — clicking a file opens a full-screen
+modal that streams video or displays images, with next/prev navigation and a
+download button. Thumbnails are still icons, not real previews (Stage 6).
+There is no authentication — every route is open.
 
 ## Stack
 
 - Next.js (App Router) + TypeScript + Tailwind CSS
 - Supabase Postgres, queried through a lightweight `postgres` client
 - AWS SDK v3 (`@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`) for
-  presigned S3 uploads
+  presigned S3 uploads and downloads
+- `yet-another-react-lightbox` (+ its zoom/captions/download/video plugins)
+  for the media viewer modal
 
 ## Setup
 
@@ -98,13 +99,15 @@ scripts/                   migrate.ts / seed.ts (run via tsx)
 src/app/api/upload-url/    POST: presigned S3 PUT URL for a new upload
 src/app/api/files/         GET ?folderId=: list files in a folder; POST: record a completed upload
 src/app/api/files/[id]/    PATCH: rename (displayName) or move (folderId); DELETE: soft delete
+src/app/api/files/[id]/view-url/  GET ?disposition=attachment: fresh presigned S3 GET URL
 src/app/api/folders/       GET ?parentId=: list folders + files at that level; POST: create
 src/app/api/folders/[id]/  PATCH: rename (name) or move (parentId); DELETE: cascade delete
 src/app/api/folders/tree/  GET: every folder flat, for the move-picker
 src/app/vault/             File browser UI — page.tsx (root) and [folderId]/page.tsx fetch
                             server-side, vault-browser.tsx is the client-side grid/breadcrumb/
-                            actions, uploader.tsx is the upload widget, item-card.tsx/item-menu.tsx/
-                            modals.tsx are the tile and dialog building blocks
+                            actions, uploader.tsx is the upload widget, viewer.tsx is the media
+                            viewer modal, item-card.tsx/item-menu.tsx/modals.tsx are the tile and
+                            dialog building blocks
 src/lib/db/                Postgres client + query functions (client.ts is the query layer; supabase.ts is a stub for later)
 src/lib/s3.ts              S3 client, used by /api/upload-url
 src/lib/media.ts           Shared video/image content-type validation
@@ -127,11 +130,36 @@ src/lib/media.ts           Shared video/image content-type validation
   (existing `ON DELETE CASCADE` removes subfolders and files). File delete is
   a soft delete (`deleted_at` set; S3 object untouched) — deleted files just
   drop out of every listing query.
-- Clicking a file thumbnail shows a "Preview coming soon" toast — no
-  playback yet (Stage 4).
+- Clicking a file thumbnail opens the media viewer (below) instead of just a
+  placeholder.
 - The uploader from Stage 2 is embedded on the page and targets whatever
   folder is currently open; newly uploaded files are prepended to the grid
   immediately, no reload needed.
+
+## How the media viewer works
+
+- Clicking a file tile opens a full-screen `yet-another-react-lightbox`
+  modal seeded with every file in the current folder, so next/prev
+  (on-screen arrows, keyboard ←/→) moves between siblings without closing it.
+  Escape, the close button, and clicking the backdrop all close it.
+- Each file's playback URL is fetched lazily from
+  `GET /api/files/:id/view-url` only when it becomes the active slide (not
+  eagerly for the whole folder) — a spinner shows until that resolves. The
+  route always signs a fresh 1-hour presigned S3 GET URL; nothing is cached
+  or persisted.
+- Images render through the Zoom plugin's own image component (pinch/scroll
+  zoom, pan) — our code only supplies a loading placeholder, never a custom
+  image renderer, so that plugin's zoom/pan logic applies unmodified. Videos
+  render through the Video plugin as a native `<video controls autoPlay=false>`
+  with no poster yet (Stage 6 adds real thumbnails).
+- **Download** re-fetches `view-url` with `?disposition=attachment`, which
+  sets `ResponseContentDisposition` on the presigned request so S3 itself
+  forces a download — this is why it's a separate fetch rather than reusing
+  the inline-playback URL, whose signature doesn't include that header.
+- Video streams via ordinary HTTP range requests against the S3 URL — no
+  special handling needed, since S3 serves `Accept-Ranges: bytes` /
+  `206 Partial Content` by default and the browser's native `<video>` element
+  already knows how to seek against that.
 
 ## Notes
 

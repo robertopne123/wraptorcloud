@@ -6,6 +6,7 @@ import type { FileRecord, Folder } from "@/lib/db/types";
 import { FolderCard, FileCard } from "./item-card";
 import { ConfirmModal, MoveModal, TextInputModal } from "./modals";
 import { Uploader } from "./uploader";
+import { MediaViewer } from "./viewer";
 
 type SelectionKey = `folder:${string}` | `file:${string}`;
 
@@ -37,7 +38,7 @@ export function VaultBrowser({
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
-  const [previewNotice, setPreviewNotice] = useState<string | null>(null);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -164,8 +165,8 @@ export function VaultBrowser({
   }
 
   function handleFileOpen(file: FileRecord) {
-    setPreviewNotice(file.display_name);
-    setTimeout(() => setPreviewNotice(null), 2000);
+    const index = files.findIndex((candidate) => candidate.id === file.id);
+    if (index !== -1) setViewerIndex(index);
   }
 
   const selectedFolderIds = useMemo(
@@ -290,10 +291,13 @@ export function VaultBrowser({
         </div>
       )}
 
-      {previewNotice && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-md bg-zinc-900 px-4 py-2 text-sm text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900">
-          Preview coming soon — {previewNotice}
-        </div>
+      {viewerIndex !== null && (
+        <MediaViewer
+          files={files}
+          index={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+          onIndexChange={setViewerIndex}
+        />
       )}
 
       {newFolderOpen && (

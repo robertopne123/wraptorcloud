@@ -80,6 +80,13 @@ export async function deleteFolder(id: string): Promise<void> {
 
 // --- Files ---
 
+export async function getFile(id: string): Promise<FileRecord | null> {
+  const rows = await sql<FileRecord[]>`
+    select * from files where id = ${id} and deleted_at is null limit 1
+  `;
+  return rows[0] ?? null;
+}
+
 export async function listFiles(folderId: string | null): Promise<FileRecord[]> {
   return folderId === null
     ? sql<FileRecord[]>`
