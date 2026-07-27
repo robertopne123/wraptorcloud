@@ -3,7 +3,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import type { Folder } from "@/lib/db/types";
 
-function Overlay({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+export function Overlay({ children, onClose }: { children: ReactNode; onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"

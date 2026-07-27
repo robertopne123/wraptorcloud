@@ -78,33 +78,48 @@ export function MediaViewer({
   index,
   onClose,
   onIndexChange,
+  getViewUrl = (fileId) => `/api/files/${fileId}/view-url`,
+  getDownloadUrl = (fileId) => `/api/files/${fileId}/view-url?disposition=attachment`,
+  allowDownload = true,
 }: {
   files: FileRecord[];
   index: number;
   onClose: () => void;
   onIndexChange: (index: number) => void;
+  // Overridable so the public share page can point at its own
+  // share-scoped, permission-checked presign routes instead of the
+  // private /api/files/:id/view-url ones.
+  getViewUrl?: (fileId: string) => string;
+  getDownloadUrl?: (fileId: string) => string;
+  // Hides the Download button entirely for view-only shares. The real
+  // enforcement lives server-side in the presign route — this is just so
+  // the UI doesn't offer a control that would be rejected anyway.
+  allowDownload?: boolean;
 }) {
   const [resolved, setResolved] = useState<Record<string, ResolvedSlide>>({});
   const requestedRef = useRef<Set<string>>(new Set());
 
-  const resolveFile = useCallback((file: FileRecord | undefined) => {
-    if (!file || requestedRef.current.has(file.id)) return;
-    requestedRef.current.add(file.id);
+  const resolveFile = useCallback(
+    (file: FileRecord | undefined) => {
+      if (!file || requestedRef.current.has(file.id)) return;
+      requestedRef.current.add(file.id);
 
-    setResolved((prev) => ({ ...prev, [file.id]: { status: "loading" } }));
+      setResolved((prev) => ({ ...prev, [file.id]: { status: "loading" } }));
 
-    fetch(`/api/files/${file.id}/view-url`)
-      .then((res) => {
-        if (!res.ok) throw new Error("Could not load file");
-        return res.json();
-      })
-      .then((data: { url: string }) => {
-        setResolved((prev) => ({ ...prev, [file.id]: { status: "ready", url: data.url } }));
-      })
-      .catch(() => {
-        setResolved((prev) => ({ ...prev, [file.id]: { status: "error" } }));
-      });
-  }, []);
+      fetch(getViewUrl(file.id))
+        .then((res) => {
+          if (!res.ok) throw new Error("Could not load file");
+          return res.json();
+        })
+        .then((data: { url: string }) => {
+          setResolved((prev) => ({ ...prev, [file.id]: { status: "ready", url: data.url } }));
+        })
+        .catch(() => {
+          setResolved((prev) => ({ ...prev, [file.id]: { status: "error" } }));
+        });
+    },
+    [getViewUrl],
+  );
 
   // Kick off the first slide's fetch as soon as the viewer opens; on.view
   // covers every navigation after that.
@@ -135,18 +150,20 @@ export function MediaViewer({
       controller={{ closeOnBackdropClick: true, closeOnEscape: true }}
       video={{ controls: true, autoPlay: false }}
       render={{ slide: renderSlide }}
-      plugins={[Zoom, Captions, Download, Video]}
-      download={{
-        download: async ({ slide, saveAs }) => {
-          const vaultSlide = slide as VaultSlide;
-          const res = await fetch(
-            `/api/files/${vaultSlide.fileId}/view-url?disposition=attachment`,
-          );
-          if (!res.ok) return;
-          const data: { url: string } = await res.json();
-          saveAs(data.url, vaultSlide.title);
-        },
-      }}
+      plugins={allowDownload ? [Zoom, Captions, Download, Video] : [Zoom, Captions, Video]}
+      download={
+        allowDownload
+          ? {
+              download: async ({ slide, saveAs }) => {
+                const vaultSlide = slide as VaultSlide;
+                const res = await fetch(getDownloadUrl(vaultSlide.fileId));
+                if (!res.ok) return;
+                const data: { url: string } = await res.json();
+                saveAs(data.url, vaultSlide.title);
+              },
+            }
+          : undefined
+      }
     />
   );
 }

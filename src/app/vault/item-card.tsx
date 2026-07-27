@@ -62,6 +62,7 @@ export function FolderCard({
   selected,
   onToggleSelect,
   onOpen,
+  onShare,
   onRename,
   onMove,
   onDelete,
@@ -70,6 +71,7 @@ export function FolderCard({
   selected: boolean;
   onToggleSelect: () => void;
   onOpen: () => void;
+  onShare: () => void;
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
@@ -82,7 +84,7 @@ export function FolderCard({
       icon={<FolderIcon className="h-10 w-10 text-zinc-400 dark:text-zinc-500" />}
       title={folder.name}
       subtitle="Folder"
-      menu={<ItemMenu onRename={onRename} onMove={onMove} onDelete={onDelete} />}
+      menu={<ItemMenu onShare={onShare} onRename={onRename} onMove={onMove} onDelete={onDelete} />}
     />
   );
 }
@@ -92,6 +94,7 @@ export function FileCard({
   selected,
   onToggleSelect,
   onOpen,
+  onShare,
   onRename,
   onMove,
   onDelete,
@@ -100,6 +103,7 @@ export function FileCard({
   selected: boolean;
   onToggleSelect: () => void;
   onOpen: () => void;
+  onShare: () => void;
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
@@ -114,7 +118,7 @@ export function FileCard({
       icon={<Icon className="h-10 w-10 text-zinc-400 dark:text-zinc-500" />}
       title={file.display_name}
       subtitle={`${formatBytes(Number(file.size_bytes))} · ${formatDate(file.created_at)}`}
-      menu={<ItemMenu onRename={onRename} onMove={onMove} onDelete={onDelete} />}
+      menu={<ItemMenu onShare={onShare} onRename={onRename} onMove={onMove} onDelete={onDelete} />}
     />
   );
 }

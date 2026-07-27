@@ -31,3 +31,16 @@ export type FileRecord = {
   created_at: string;
   deleted_at: string | null;
 };
+
+export type SharePermission = "view" | "download";
+
+export type ShareLink = {
+  id: string;
+  token: string;
+  file_id: string | null;
+  folder_id: string | null;
+  created_by: string | null;
+  permission: SharePermission;
+  expires_at: string | null;
+  created_at: string;
+};

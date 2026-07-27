@@ -1,5 +1,5 @@
 import { sql } from "./client";
-import type { FileRecord, Folder, MediaType, User } from "./types";
+import type { FileRecord, Folder, MediaType, ShareLink, SharePermission, User } from "./types";
 
 export async function listUsers(): Promise<User[]> {
   return sql<User[]>`select id, email, name, created_at from users order by name`;
@@ -144,6 +144,53 @@ export async function softDeleteFile(id: string): Promise<FileRecord | null> {
     update files set deleted_at = now()
     where id = ${id} and deleted_at is null
     returning *
+  `;
+  return rows[0] ?? null;
+}
+
+// --- Share links ---
+
+export async function createShareLink(input: {
+  token: string;
+  fileId: string | null;
+  folderId: string | null;
+  permission: SharePermission;
+  expiresAt: string | null;
+}): Promise<ShareLink> {
+  const rows = await sql<ShareLink[]>`
+    insert into share_links (token, file_id, folder_id, permission, expires_at)
+    values (${input.token}, ${input.fileId}, ${input.folderId}, ${input.permission}, ${input.expiresAt})
+    returning *
+  `;
+  return rows[0];
+}
+
+export async function listShareLinksForFile(fileId: string): Promise<ShareLink[]> {
+  return sql<ShareLink[]>`
+    select * from share_links where file_id = ${fileId} order by created_at desc
+  `;
+}
+
+export async function listShareLinksForFolder(folderId: string): Promise<ShareLink[]> {
+  return sql<ShareLink[]>`
+    select * from share_links where folder_id = ${folderId} order by created_at desc
+  `;
+}
+
+// Null for both an unknown token and an expired one, so callers can show a
+// single unified "expired or doesn't exist" message either way.
+export async function getActiveShareLinkByToken(token: string): Promise<ShareLink | null> {
+  const rows = await sql<ShareLink[]>`
+    select * from share_links
+    where token = ${token} and (expires_at is null or expires_at > now())
+    limit 1
+  `;
+  return rows[0] ?? null;
+}
+
+export async function deleteShareLinkByToken(token: string): Promise<ShareLink | null> {
+  const rows = await sql<ShareLink[]>`
+    delete from share_links where token = ${token} returning *
   `;
   return rows[0] ?? null;
 }

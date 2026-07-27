@@ -3,10 +3,11 @@
 Internal media asset manager for uploading, organizing, and sharing video/image
 footage.
 
-**Stage 4 (this stage):** media viewer — clicking a file opens a full-screen
-modal that streams video or displays images, with next/prev navigation and a
-download button. Thumbnails are still icons, not real previews (Stage 6).
-There is no authentication — every route is open.
+**Stage 5 (this stage):** share links — generate a public link to a file or
+folder (view-only or view+download, with an optional expiry) that works with
+no auth at `/share/[token]`, for sending footage to people who don't have app
+access. Thumbnails are still icons, not real previews (Stage 6). The main app
+itself still has no authentication — every route is open.
 
 ## Stack
 
@@ -103,13 +104,21 @@ src/app/api/files/[id]/view-url/  GET ?disposition=attachment: fresh presigned S
 src/app/api/folders/       GET ?parentId=: list folders + files at that level; POST: create
 src/app/api/folders/[id]/  PATCH: rename (name) or move (parentId); DELETE: cascade delete
 src/app/api/folders/tree/  GET: every folder flat, for the move-picker
+src/app/api/share-links/   GET ?fileId=/?folderId=: list existing links for an item; POST: create
+src/app/api/share-links/[token]/               GET ?folderId=: public lookup (+ subfolder browsing); DELETE: revoke
+src/app/api/share-links/[token]/files/[fileId]/view-url/  GET: share-scoped, permission-checked presigned URL
 src/app/vault/             File browser UI — page.tsx (root) and [folderId]/page.tsx fetch
                             server-side, vault-browser.tsx is the client-side grid/breadcrumb/
                             actions, uploader.tsx is the upload widget, viewer.tsx is the media
-                            viewer modal, item-card.tsx/item-menu.tsx/modals.tsx are the tile and
-                            dialog building blocks
+                            viewer modal, share-modal.tsx is the Share dialog, item-card.tsx/
+                            item-menu.tsx/modals.tsx are the tile and dialog building blocks
+src/app/share/[token]/     Public share page — page.tsx resolves the token server-side,
+                            share-view.tsx dispatches to either the viewer (file share) or
+                            public-folder-browser.tsx (folder share, read-only)
 src/lib/db/                Postgres client + query functions (client.ts is the query layer; supabase.ts is a stub for later)
-src/lib/s3.ts              S3 client, used by /api/upload-url
+src/lib/share.ts           resolveShare() — the token/expiry/containment logic shared by the
+                            share-links API route and the server-rendered /share page
+src/lib/s3.ts              S3 client + presignFileViewUrl(), used by both view-url routes
 src/lib/media.ts           Shared video/image content-type validation
 ```
 
@@ -161,8 +170,38 @@ src/lib/media.ts           Shared video/image content-type validation
   `206 Partial Content` by default and the browser's native `<video>` element
   already knows how to seek against that.
 
+## How share links work
+
+- The "Share" action (in every item's "…" menu) opens a modal listing any
+  existing links for that file/folder first, each with its own Revoke
+  button, before offering to generate a new one (permission: View only /
+  View + Download; expiry: Never / 24 hours / 7 days / 30 days).
+- A share link's token is a `crypto.randomUUID()`, unrelated to the file's
+  or folder's own id. `GET /api/share-links/:token` (and the public page
+  that calls it server-side) returns the exact same "expired or doesn't
+  exist" 404 for both an unknown token and an expired one — never
+  distinguishing the two, so there's nothing to learn from probing tokens.
+- **Folder shares are recursive**: browsing a shared folder's subfolders is
+  allowed, but only within that folder's own subtree. Every request —
+  browsing a subfolder (`?folderId=`) or fetching a file's presigned URL —
+  is re-validated server-side against the share's root folder via the same
+  recursive-CTE ancestry check the private Move modal uses; nothing is
+  reachable through a share token beyond what was actually shared, no
+  matter what id a client sends.
+- **Permission is enforced twice, but only one of those times matters.**
+  The UI hides the Download button for a view-only share, but the actual
+  gate is server-side: `GET /api/share-links/:token/files/:fileId/view-url`
+  rejects `?disposition=attachment` with a 403 whenever the share's
+  `permission` isn't `'download'`, regardless of what the frontend does.
+- The public `/share/[token]` page reuses the exact same `MediaViewer` from
+  the private app (`getViewUrl`/`getDownloadUrl`/`allowDownload` props point
+  it at the share-scoped routes instead of `/api/files/:id/...`) and a
+  separate read-only grid component for folder shares — no create/rename/
+  move/delete actions, just breadcrumb navigation and click-to-view.
+
 ## Notes
 
 - There is currently no authentication. Every route is open. The `users`
   table stays only to give future uploads an `owner_id` to reference — it's
-  nullable and not populated anywhere yet.
+  nullable and not populated anywhere yet. Share links have the same
+  no-auth `created_by` — anyone with app access can share anything.

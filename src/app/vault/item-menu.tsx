@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { DotsIcon } from "./icons";
 
 export function ItemMenu({
+  onShare,
   onRename,
   onMove,
   onDelete,
 }: {
+  onShare: () => void;
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
@@ -44,6 +46,17 @@ export function ItemMenu({
 
       {open && (
         <div className="absolute right-0 z-10 mt-1 w-32 overflow-hidden rounded-md border border-zinc-200 bg-white text-sm shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpen(false);
+              onShare();
+            }}
+            className="block w-full px-3 py-2 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          >
+            Share
+          </button>
           <button
             type="button"
             onClick={(event) => {

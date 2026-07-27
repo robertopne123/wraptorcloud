@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { FileRecord, Folder } from "@/lib/db/types";
 import { FolderCard, FileCard } from "./item-card";
 import { ConfirmModal, MoveModal, TextInputModal } from "./modals";
+import { ShareModal } from "./share-modal";
 import { Uploader } from "./uploader";
 import { MediaViewer } from "./viewer";
 
@@ -13,6 +14,7 @@ type SelectionKey = `folder:${string}` | `file:${string}`;
 type RenameTarget = { type: "folder" | "file"; id: string; name: string };
 type MoveTarget = { type: "folder" | "file"; ids: string[] };
 type DeleteTarget = { type: "folder" | "file"; ids: string[]; label: string };
+type ShareTarget = { type: "folder" | "file"; id: string; name: string };
 
 export function VaultBrowser({
   currentFolderId,
@@ -38,6 +40,7 @@ export function VaultBrowser({
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -265,6 +268,7 @@ export function VaultBrowser({
               selected={selected.has(`folder:${folder.id}`)}
               onToggleSelect={() => toggleSelect(`folder:${folder.id}`)}
               onOpen={() => navigateToFolder(folder.id)}
+              onShare={() => setShareTarget({ type: "folder", id: folder.id, name: folder.name })}
               onRename={() => setRenameTarget({ type: "folder", id: folder.id, name: folder.name })}
               onMove={() => setMoveTarget({ type: "folder", ids: [folder.id] })}
               onDelete={() =>
@@ -279,6 +283,9 @@ export function VaultBrowser({
               selected={selected.has(`file:${file.id}`)}
               onToggleSelect={() => toggleSelect(`file:${file.id}`)}
               onOpen={() => handleFileOpen(file)}
+              onShare={() =>
+                setShareTarget({ type: "file", id: file.id, name: file.display_name })
+              }
               onRename={() =>
                 setRenameTarget({ type: "file", id: file.id, name: file.display_name })
               }
@@ -342,6 +349,8 @@ export function VaultBrowser({
           onClose={() => setDeleteTarget(null)}
         />
       )}
+
+      {shareTarget && <ShareModal target={shareTarget} onClose={() => setShareTarget(null)} />}
     </div>
   );
 }
