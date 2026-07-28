@@ -12,7 +12,7 @@ if (!databaseUrl) {
 // Supabase-specific features (Storage, Realtime, etc.).
 const globalForDb = globalThis as unknown as { sql?: ReturnType<typeof postgres> };
 
-export const sql = globalForDb.sql ?? postgres(databaseUrl);
+export const sql = globalForDb.sql ?? postgres(databaseUrl, { max: 4 });
 
 if (process.env.NODE_ENV !== "production") {
   globalForDb.sql = sql;

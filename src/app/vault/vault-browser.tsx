@@ -8,6 +8,7 @@ import { ConfirmModal, MoveModal, TextInputModal } from "./modals";
 import { ShareModal } from "./share-modal";
 import { Uploader } from "./uploader";
 import { MediaViewer } from "./viewer";
+import { MigrationProgress } from "./migration-progress";
 
 type SelectionKey = `folder:${string}` | `file:${string}`;
 
@@ -44,6 +45,7 @@ export function VaultBrowser({
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [search, setSearch] = useState("");
 
   const refresh = useCallback(async () => {
     const [contentsRes, treeRes] = await Promise.all([
@@ -233,6 +235,10 @@ export function VaultBrowser({
 
   const moveExcludedIds = useMemo(() => new Set(selectedFolderIds), [selectedFolderIds]);
 
+  const query = search.trim().toLowerCase();
+  const visibleFolders = query ? folders.filter((f) => f.name.toLowerCase().includes(query)) : folders;
+  const visibleFiles = query ? files.filter((f) => f.display_name.toLowerCase().includes(query)) : files;
+
   return (
     <div className="flex h-screen flex-col bg-zinc-50 dark:bg-black">
       {/* ── fixed header ── */}
@@ -240,6 +246,20 @@ export function VaultBrowser({
         <div className="mb-3">
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Wraptor Vault</h1>
           <Breadcrumb breadcrumb={initialBreadcrumb} onNavigate={navigateToFolder} />
+        </div>
+
+        <div className="mb-3 relative">
+          <svg viewBox="0 0 20 20" fill="none" className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" aria-hidden="true">
+            <circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M13 13l4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <input
+            type="search"
+            placeholder="Search files and folders…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full rounded-md border border-zinc-300 bg-white py-1.5 pl-8 pr-3 text-sm text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:ring-zinc-600"
+          />
         </div>
 
         <Uploader
@@ -315,11 +335,13 @@ export function VaultBrowser({
 
       {/* ── scrollable grid ── */}
       <div className="flex-1 overflow-y-auto px-6 py-4">
-        {folders.length === 0 && files.length === 0 ? (
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">This folder is empty.</p>
+        {visibleFolders.length === 0 && visibleFiles.length === 0 ? (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            {query ? `No results for "${search}"` : "This folder is empty."}
+          </p>
         ) : (
           <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9">
-            {folders.map((folder) => (
+            {visibleFolders.map((folder) => (
               <FolderCard
                 key={folder.id}
                 folder={folder}
@@ -339,7 +361,7 @@ export function VaultBrowser({
                 }
               />
             ))}
-            {files.map((file) => (
+            {visibleFiles.map((file) => (
               <FileCard
                 key={file.id}
                 file={file}
@@ -420,6 +442,8 @@ export function VaultBrowser({
       )}
 
       {shareTarget && <ShareModal target={shareTarget} onClose={() => setShareTarget(null)} />}
+
+      <MigrationProgress />
     </div>
   );
 }

@@ -1,23 +1,35 @@
 import path from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 import { randomUUID } from "node:crypto";
+import { pipeline } from "node:stream/promises";
+import type { Readable } from "node:stream";
+import { PassThrough } from "node:stream";
 import dotenv from "dotenv";
 import { google } from "googleapis";
 import postgres from "postgres";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { mediaTypeFromContentType } from "../src/lib/media.js";
+
+const LARGE_FILE_WARN_BYTES = 10 * 1024 ** 3; // 10 GB
+const LARGE_FILE_TEMP_BYTES = 500 * 1024 * 1024; // 500 MB — above this, download to disk first
 
 dotenv.config({ path: ".env.local" });
 
 // ── CLI args ─────────────────────────────────────────────────────────────────
 
-function parseArgs(): { folderId: string } {
+function parseArgs(): { folderId: string; rescan: boolean } {
   const arg = process.argv.find((a) => a.startsWith("--folder-id="));
   if (!arg) {
-    console.error("Usage: npx tsx scripts/migrate-from-drive.ts --folder-id=<drive-folder-id>");
+    console.error("Usage: npx tsx scripts/migrate-from-drive.ts --folder-id=<drive-folder-id> [--rescan]");
     process.exit(1);
   }
-  return { folderId: arg.slice("--folder-id=".length) };
+  return {
+    folderId: arg.slice("--folder-id=".length),
+    rescan: process.argv.includes("--rescan"),
+  };
 }
 
 // ── Env validation ────────────────────────────────────────────────────────────
@@ -36,7 +48,7 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, label = ""): Pro
       return await fn();
     } catch (err) {
       if (i === attempts) throw err;
-      const delay = 500 * 2 ** (i - 1);
+      const delay = 2000 * 2 ** (i - 1); // 2s, 4s
       console.warn(`  Retry ${i}/${attempts - 1} for "${label}" in ${delay}ms…`);
       await new Promise((r) => setTimeout(r, delay));
     }
@@ -46,15 +58,15 @@ async function withRetry<T>(fn: () => Promise<T>, attempts = 3, label = ""): Pro
 
 // ── Concurrency pool ──────────────────────────────────────────────────────────
 
-async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>) {
+async function pool<T>(items: T[], concurrency: number, fn: (item: T, workerIndex: number) => Promise<void>) {
   const queue = [...items];
-  async function worker() {
+  async function worker(workerIndex: number) {
     while (queue.length > 0) {
       const item = queue.shift()!;
-      await fn(item);
+      await fn(item, workerIndex);
     }
   }
-  await Promise.all(Array.from({ length: concurrency }, worker));
+  await Promise.all(Array.from({ length: concurrency }, (_, i) => worker(i)));
 }
 
 // ── Google Drive helpers ──────────────────────────────────────────────────────
@@ -97,26 +109,105 @@ async function listDriveChildren(
   return items;
 }
 
-async function downloadDriveFile(
+async function getDriveStream(
   drive: ReturnType<typeof google.drive>,
   fileId: string,
-  label: string,
-): Promise<Buffer> {
-  return withRetry(async () => {
-    const res = await drive.files.get(
-      { fileId, alt: "media" },
-      { responseType: "arraybuffer" },
-    );
-    return Buffer.from(res.data as ArrayBuffer);
-  }, 3, `download ${label}`);
+): Promise<Readable> {
+  const res = await drive.files.get(
+    { fileId, alt: "media" },
+    { responseType: "stream" },
+  );
+  return res.data as Readable;
 }
 
 // ── DB helpers (inline, no shared singleton) ──────────────────────────────────
 
 type Row = Record<string, unknown>;
 
+// ── Migration run progress tracking ──────────────────────────────────────────
+
+type ProgressState = {
+  runId: string;
+  total: number;
+  processed: number;
+  migrated: number;
+  skipped: number;
+  failed: number;
+};
+
+async function createMigrationRun(sql: ReturnType<typeof makeDb>, total: number): Promise<string> {
+  const rows = await sql<Row[]>`
+    insert into migration_runs (total) values (${total}) returning id
+  `;
+  return rows[0].id as string;
+}
+
+async function updateMigrationProgress(
+  sql: ReturnType<typeof makeDb>,
+  state: ProgressState,
+  currentFile: string,
+  currentFolder: string | null,
+): Promise<void> {
+  await sql`
+    update migration_runs set
+      total        = ${state.total},
+      processed    = ${state.processed},
+      migrated     = ${state.migrated},
+      skipped      = ${state.skipped},
+      failed       = ${state.failed},
+      current_file   = ${currentFile},
+      current_folder = ${currentFolder},
+      updated_at   = now()
+    where id = ${state.runId}
+  `;
+}
+
+async function finishMigrationRun(
+  sql: ReturnType<typeof makeDb>,
+  runId: string,
+  status: "done" | "error",
+): Promise<void> {
+  await sql`
+    update migration_runs set status = ${status}, current_file = null,
+      current_folder = null, workers = '[]', finished_at = now(), updated_at = now()
+    where id = ${runId}
+  `;
+}
+
+type WorkerSlot = { file: string; folder: string | null; pct: number } | null;
+
+// Writes all worker slots to DB on a fixed interval — one write per tick
+// regardless of how many workers are active, avoiding connection contention.
+function makeWorkerFlusher(sql: ReturnType<typeof makeDb>, runId: string, slots: WorkerSlot[]) {
+  let dirty = false;
+
+  const interval = setInterval(async () => {
+    if (!dirty) return;
+    dirty = false;
+    try {
+      const workers = sql.json(slots.filter(Boolean));
+      await sql`update migration_runs set workers = ${workers}, updated_at = now() where id = ${runId}`;
+    } catch { /* non-fatal */ }
+  }, 500);
+
+  return {
+    mark() { dirty = true; },
+    async flushNow() {
+      dirty = false;
+      const workers = sql.json(slots.filter(Boolean));
+      await sql`update migration_runs set workers = ${workers}, updated_at = now() where id = ${runId}`;
+    },
+    stop() { clearInterval(interval); },
+  };
+}
+
 function makeDb(databaseUrl: string) {
-  return postgres(databaseUrl, { max: 5 });
+  return postgres(databaseUrl, {
+    max: 3,
+    idle_timeout: 0,     // never drop idle connections
+    keep_alive: 30,      // TCP keepalive every 30s to survive long tree walks
+    connect_timeout: 30,
+  });
 }
 
 async function findFolder(
@@ -187,16 +278,46 @@ function makeS3(region: string, accessKeyId: string, secretAccessKey: string) {
   return new S3Client({ region, credentials: { accessKeyId, secretAccessKey } });
 }
 
-async function uploadToS3(
+// Streaming multipart upload — handles files of any size without buffering.
+async function streamToS3(
+  s3: S3Client,
+  bucket: string,
+  key: string,
+  stream: Readable,
+  contentType: string,
+  onProgress?: (pct: number) => void,
+  contentLength?: number,
+): Promise<void> {
+  const upload = new Upload({
+    client: s3,
+    params: {
+      Bucket: bucket,
+      Key: key,
+      Body: stream,
+      ContentType: contentType,
+      ...(contentLength ? { ContentLength: contentLength } : {}),
+    },
+    queueSize: 4,
+    partSize: 8 * 1024 * 1024, // 8 MB parts — small enough to get progress on most files
+  });
+  if (onProgress) {
+    upload.on("httpUploadProgress", ({ loaded, total }) => {
+      if (loaded && total) onProgress(Math.round((loaded / total) * 100));
+    });
+  }
+  await upload.done();
+}
+
+// Buffer upload for small files (thumbnails only).
+async function uploadBufferToS3(
   s3: S3Client,
   bucket: string,
   key: string,
   buffer: Buffer,
   contentType: string,
-) {
-  return withRetry(
-    () =>
-      s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: buffer, ContentType: contentType })),
+): Promise<void> {
+  await withRetry(
+    () => s3.send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: buffer, ContentType: contentType })),
     3,
     `upload ${key}`,
   );
@@ -230,7 +351,7 @@ async function runThumbnail(
       const sourceUrl = await presignS3Url(s3, bucket, s3Key);
       const { thumbnailBuffer, durationSeconds, width, height } =
         await generateVideoThumbnail(sourceUrl);
-      await uploadToS3(s3, bucket, thumbnailKey, thumbnailBuffer, "image/jpeg");
+      await uploadBufferToS3(s3, bucket, thumbnailKey, thumbnailBuffer, "image/jpeg");
       await sql`
         update files set thumbnail_key = ${thumbnailKey}, duration_seconds = ${durationSeconds},
           width = ${width}, height = ${height}
@@ -249,7 +370,7 @@ async function runThumbnail(
         `fetch ${s3Key}`,
       );
       const thumbnailBuffer = await generateImageThumbnail(sourceBuffer);
-      await uploadToS3(s3, bucket, thumbnailKey, thumbnailBuffer, "image/jpeg");
+      await uploadBufferToS3(s3, bucket, thumbnailKey, thumbnailBuffer, "image/jpeg");
       await sql`
         update files set thumbnail_key = ${thumbnailKey}, duration_seconds = null, width = null, height = null
         where id = ${fileId}
@@ -300,10 +421,42 @@ async function walkDriveFolder(
   }
 }
 
+// ── File-task cache ───────────────────────────────────────────────────────────
+
+type TaskCache = {
+  folderId: string;
+  scannedAt: string;
+  tasks: FileTask[];
+};
+
+function cachePath(folderId: string): string {
+  return path.join(path.dirname(new URL(import.meta.url).pathname), ".drive-cache", `${folderId}.json`);
+}
+
+function loadTaskCache(folderId: string): FileTask[] | null {
+  const p = cachePath(folderId);
+  try {
+    const raw = fs.readFileSync(p, "utf8");
+    const cache = JSON.parse(raw) as TaskCache;
+    if (cache.folderId !== folderId) return null;
+    console.log(`Using cached tree from ${cache.scannedAt} (pass --rescan to refresh)`);
+    return cache.tasks;
+  } catch {
+    return null;
+  }
+}
+
+function saveTaskCache(folderId: string, tasks: FileTask[]): void {
+  const p = cachePath(folderId);
+  fs.mkdirSync(path.dirname(p), { recursive: true });
+  const cache: TaskCache = { folderId, scannedAt: new Date().toISOString(), tasks };
+  fs.writeFileSync(p, JSON.stringify(cache), "utf8");
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
-  const { folderId: rootDriveFolderId } = parseArgs();
+  const { folderId: rootDriveFolderId, rescan } = parseArgs();
 
   const keyPath = requireEnv("GOOGLE_SERVICE_ACCOUNT_KEY_PATH");
   const databaseUrl = requireEnv("DATABASE_URL");
@@ -326,11 +479,23 @@ async function main() {
   console.log(`Drive folder: ${rootDriveFolderId}`);
   console.log(`S3 bucket:    ${s3Bucket}\n`);
 
-  // ── Phase 1: walk the tree, collect file tasks ────────────────────────────
-  console.log("Walking Drive folder tree…");
-  const fileTasks: FileTask[] = [];
-  await walkDriveFolder(drive, sql, rootDriveFolderId, null, null, fileTasks);
-  console.log(`Found ${fileTasks.length} file(s) to process.\n`);
+  // Create the run row immediately so the web modal appears during the tree walk
+  const runId = await createMigrationRun(sql, 0);
+  console.log(`Migration run ID: ${runId}\n`);
+
+  // ── Phase 1: walk the tree (or load from cache) ──────────────────────────
+  let fileTasks: FileTask[];
+  const cached = !rescan && loadTaskCache(rootDriveFolderId);
+  if (cached) {
+    fileTasks = cached;
+    console.log(`Found ${fileTasks.length} file(s) to process (from cache).\n`);
+  } else {
+    console.log("Walking Drive folder tree…");
+    fileTasks = [];
+    await walkDriveFolder(drive, sql, rootDriveFolderId, null, null, fileTasks);
+    saveTaskCache(rootDriveFolderId, fileTasks);
+    console.log(`Found ${fileTasks.length} file(s) to process.\n`);
+  }
 
   // ── Phase 2: upload files concurrently ───────────────────────────────────
   let migrated = 0;
@@ -339,11 +504,35 @@ async function main() {
   let processed = 0;
   const total = fileTasks.length;
 
-  await pool(fileTasks, 4, async ({ driveFile, vaultFolderId }) => {
+  // Update total now that we know it
+  await sql`update migration_runs set total = ${total}, updated_at = now() where id = ${runId}`;
+
+  const LARGE_WORKERS = 2;
+  const SMALL_WORKERS = 6;
+
+  const largeTasks = fileTasks.filter((t) => Number(t.driveFile.size ?? 0) > LARGE_FILE_TEMP_BYTES);
+  const smallTasks = fileTasks.filter((t) => Number(t.driveFile.size ?? 0) <= LARGE_FILE_TEMP_BYTES);
+  console.log(`  ${largeTasks.length} large (>500 MB) → ${LARGE_WORKERS} workers`);
+  console.log(`  ${smallTasks.length} small           → ${SMALL_WORKERS} workers\n`);
+
+  const workerSlots: WorkerSlot[] = new Array(LARGE_WORKERS + SMALL_WORKERS).fill(null);
+  const workerFlusher = makeWorkerFlusher(sql, runId, workerSlots);
+
+  const processFile = async ({ driveFile, vaultFolderId }: FileTask, slotIndex: number) => {
     processed++;
     const pct = total > 0 ? ((processed / total) * 100).toFixed(1) : "0.0";
     const counter = `[${processed}/${total} ${pct}%]`;
     const label = driveFile.name;
+
+    // Resolve folder name for display
+    let folderName: string | null = null;
+    if (vaultFolderId) {
+      const rows = await sql<Row[]>`select name from folders where id = ${vaultFolderId} limit 1`;
+      folderName = rows[0]?.name as string ?? null;
+    }
+
+    workerSlots[slotIndex] = { file: label, folder: folderName, pct: 0 };
+    workerFlusher.mark();
 
     try {
       // Idempotency check
@@ -351,21 +540,59 @@ async function main() {
       if (exists) {
         console.log(`${counter} Skipped (already exists): ${label}`);
         skipped++;
+        workerSlots[slotIndex] = null;
+        await updateMigrationProgress(sql, { runId, total, processed, migrated, skipped, failed: failed.length }, label, folderName);
         return;
       }
-
-      // Download from Drive
-      const buffer = await downloadDriveFile(drive, driveFile.id, label);
 
       // Determine extension + S3 key
       const ext = path.extname(driveFile.name).replace(/^\./, "") || "bin";
       const s3Key = `footage/${randomUUID()}.${ext}`;
       const mimeType = driveFile.mimeType;
       const mediaType = mediaTypeFromContentType(mimeType);
-      const sizeBytes = buffer.byteLength;
+      const sizeBytes = driveFile.size ? Number(driveFile.size) : 0;
 
-      // Upload to S3
-      await uploadToS3(s3, s3Bucket, s3Key, buffer, mimeType);
+      if (sizeBytes >= LARGE_FILE_WARN_BYTES) {
+        console.warn(`  [warn] Very large file (${(sizeBytes / 1024 ** 3).toFixed(1)} GB): ${label}`);
+      }
+
+      await updateMigrationProgress(sql, { runId, total, processed, migrated, skipped, failed: failed.length }, label, folderName);
+
+      const setSlot = (pct: number) => {
+        workerSlots[slotIndex] = { file: label, folder: folderName, pct };
+        workerFlusher.mark();
+      };
+
+      if (sizeBytes > LARGE_FILE_TEMP_BYTES) {
+        // Large file: download to temp disk first (Drive can't be stalled by S3 backpressure).
+        // Progress: download = 0→50%, upload = 50→100%.
+        const tmpPath = path.join(os.tmpdir(), `wraptor-${randomUUID()}`);
+        try {
+          await withRetry(async () => {
+            const stream = await getDriveStream(drive, driveFile.id);
+            let bytesWritten = 0;
+            const counter = new PassThrough();
+            counter.on("data", (chunk: Buffer) => {
+              bytesWritten += chunk.length;
+              if (sizeBytes > 0) setSlot(Math.round((bytesWritten / sizeBytes) * 50));
+            });
+            await pipeline(stream, counter, fs.createWriteStream(tmpPath));
+          }, 3, `download ${label}`);
+          await streamToS3(s3, s3Bucket, s3Key, fs.createReadStream(tmpPath), mimeType, (uploadPct) => {
+            setSlot(50 + Math.round(uploadPct / 2));
+          }, sizeBytes);
+        } finally {
+          fs.unlink(tmpPath, () => {});
+        }
+      } else {
+        // Small/medium file: stream directly Drive → S3.
+        // Passing ContentLength lets the SDK report accurate progress.
+        await withRetry(async () => {
+          const stream = await getDriveStream(drive, driveFile.id);
+          setSlot(0);
+          await streamToS3(s3, s3Bucket, s3Key, stream, mimeType, setSlot, sizeBytes || undefined);
+        }, 3, `stream ${label}`);
+      }
 
       // Insert DB record
       const fileId = await insertFile(sql, {
@@ -380,6 +607,8 @@ async function main() {
       // Thumbnails (fire-and-forget per file, errors are logged inside)
       await runThumbnail(fileId, s3Key, mediaType, s3, s3Bucket, sql);
 
+      workerSlots[slotIndex] = { file: label, folder: folderName, pct: 100 };
+      workerFlusher.mark();
       console.log(`${counter} Uploaded: ${label}`);
       migrated++;
     } catch (err) {
@@ -387,7 +616,18 @@ async function main() {
       console.error(`${counter} FAILED: ${label} — ${reason}`);
       failed.push({ name: label, reason });
     }
-  });
+
+    workerSlots[slotIndex] = null;
+    await updateMigrationProgress(sql, { runId, total, processed, migrated, skipped, failed: failed.length }, label, folderName);
+  };
+
+  await Promise.all([
+    pool(largeTasks, LARGE_WORKERS, (task, i) => processFile(task, i)),
+    pool(smallTasks, SMALL_WORKERS, (task, i) => processFile(task, i + LARGE_WORKERS)),
+  ]);
+
+  workerFlusher.stop();
+  await finishMigrationRun(sql, runId, failed.length > 0 ? "error" : "done");
 
   // ── Summary ───────────────────────────────────────────────────────────────
   console.log("\n──────────────────────────────────────");
