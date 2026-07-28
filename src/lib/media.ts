@@ -1,9 +1,9 @@
 import type { MediaType } from "@/lib/db/types";
 
-export function mediaTypeFromContentType(contentType: string): MediaType | null {
+export function mediaTypeFromContentType(contentType: string): MediaType {
   if (contentType.startsWith("video/")) return "video";
   if (contentType.startsWith("image/")) return "image";
-  return null;
+  return "other";
 }
 
 // RFC 5987 encoding: an ASCII-safe fallback plus a UTF-8 extended value, so

@@ -1,8 +1,9 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useState, useEffect } from "react";
 import type { FileRecord, Folder } from "@/lib/db/types";
-import { FolderIcon, VideoIcon, ImageIcon } from "./icons";
+import { FolderIcon, VideoIcon, ImageIcon, FileIcon } from "./icons";
 import { ItemMenu } from "./item-menu";
 import { formatBytes, formatDate } from "./format";
 
@@ -62,6 +63,7 @@ export function FolderCard({
   selected,
   onToggleSelect,
   onOpen,
+  onDownload,
   onShare,
   onRename,
   onMove,
@@ -71,6 +73,7 @@ export function FolderCard({
   selected: boolean;
   onToggleSelect: () => void;
   onOpen: () => void;
+  onDownload: () => void;
   onShare: () => void;
   onRename: () => void;
   onMove: () => void;
@@ -84,9 +87,57 @@ export function FolderCard({
       icon={<FolderIcon className="h-10 w-10 text-zinc-400 dark:text-zinc-500" />}
       title={folder.name}
       subtitle="Folder"
-      menu={<ItemMenu onShare={onShare} onRename={onRename} onMove={onMove} onDelete={onDelete} />}
+      menu={
+        <ItemMenu
+          onDownload={onDownload}
+          onShare={onShare}
+          onRename={onRename}
+          onMove={onMove}
+          onDelete={onDelete}
+        />
+      }
     />
   );
+}
+
+function FileThumbnail({
+  fileId,
+  hasThumbnailKey,
+  mediaType,
+}: {
+  fileId: string;
+  hasThumbnailKey: boolean;
+  mediaType: "video" | "image" | "other";
+}) {
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  const Icon = mediaType === "video" ? VideoIcon : mediaType === "image" ? ImageIcon : FileIcon;
+
+  useEffect(() => {
+    if (!hasThumbnailKey || mediaType === "other") return;
+    let cancelled = false;
+    fetch(`/api/files/${fileId}/thumbnail-url`)
+      .then((r) => r.json())
+      .then((data: { url: string | null }) => {
+        if (!cancelled && data.url) setThumbnailUrl(data.url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [fileId, hasThumbnailKey, mediaType]);
+
+  if (thumbnailUrl) {
+    return (
+      <img
+        src={thumbnailUrl}
+        alt=""
+        className="h-20 w-full rounded object-cover"
+        onError={() => setThumbnailUrl(null)}
+      />
+    );
+  }
+
+  return <Icon className="h-10 w-10 text-zinc-400 dark:text-zinc-500" />;
 }
 
 export function FileCard({
@@ -94,6 +145,7 @@ export function FileCard({
   selected,
   onToggleSelect,
   onOpen,
+  onDownload,
   onShare,
   onRename,
   onMove,
@@ -103,22 +155,35 @@ export function FileCard({
   selected: boolean;
   onToggleSelect: () => void;
   onOpen: () => void;
+  onDownload: () => void;
   onShare: () => void;
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
 }) {
-  const Icon = file.media_type === "video" ? VideoIcon : ImageIcon;
-
   return (
     <Tile
       selected={selected}
       onToggleSelect={onToggleSelect}
       onOpen={onOpen}
-      icon={<Icon className="h-10 w-10 text-zinc-400 dark:text-zinc-500" />}
+      icon={
+        <FileThumbnail
+          fileId={file.id}
+          hasThumbnailKey={file.thumbnail_key !== null}
+          mediaType={file.media_type}
+        />
+      }
       title={file.display_name}
       subtitle={`${formatBytes(Number(file.size_bytes))} · ${formatDate(file.created_at)}`}
-      menu={<ItemMenu onShare={onShare} onRename={onRename} onMove={onMove} onDelete={onDelete} />}
+      menu={
+        <ItemMenu
+          onDownload={onDownload}
+          onShare={onShare}
+          onRename={onRename}
+          onMove={onMove}
+          onDelete={onDelete}
+        />
+      }
     />
   );
 }

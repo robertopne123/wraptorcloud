@@ -43,6 +43,7 @@ export function VaultBrowser({
   const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   const refresh = useCallback(async () => {
     const [contentsRes, treeRes] = await Promise.all([
@@ -75,6 +76,40 @@ export function VaultBrowser({
       return next;
     });
   }, []);
+
+  // Downloads a single file via presigned URL (no server-side zip needed).
+  const handleDownloadFile = useCallback(async (fileId: string) => {
+    const res = await fetch(`/api/files/${fileId}/view-url?disposition=attachment`);
+    if (!res.ok) { setError("Download failed"); return; }
+    const { url } = await res.json();
+    triggerAnchorDownload(url);
+  }, []);
+
+  // Downloads one or more files/folders as a ZIP streamed from the server.
+  const handleDownloadZip = useCallback(
+    async (fileIds: string[], folderIds: string[]) => {
+      setDownloading(true);
+      try {
+        const res = await fetch("/api/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileIds, folderIds }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          setError(body.error ?? "Download failed");
+          return;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        triggerAnchorDownload(url, "vault-download.zip");
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      } finally {
+        setDownloading(false);
+      }
+    },
+    [],
+  );
 
   async function handleCreateFolder(name: string) {
     setNewFolderOpen(false);
@@ -167,8 +202,17 @@ export function VaultBrowser({
     await refresh();
   }
 
+  const mediaFiles = useMemo(
+    () => files.filter((f) => f.media_type === "video" || f.media_type === "image"),
+    [files],
+  );
+
   function handleFileOpen(file: FileRecord) {
-    const index = files.findIndex((candidate) => candidate.id === file.id);
+    if (file.media_type === "other") {
+      handleDownloadFile(file.id);
+      return;
+    }
+    const index = mediaFiles.findIndex((candidate) => candidate.id === file.id);
     if (index !== -1) setViewerIndex(index);
   }
 
@@ -181,126 +225,151 @@ export function VaultBrowser({
   );
   const selectedFileIds = useMemo(
     () =>
-      [...selected].filter((key) => key.startsWith("file:")).map((key) => key.slice("file:".length)),
+      [...selected]
+        .filter((key) => key.startsWith("file:"))
+        .map((key) => key.slice("file:".length)),
     [selected],
   );
 
-  // Folders currently selected can't be valid move targets for themselves.
   const moveExcludedIds = useMemo(() => new Set(selectedFolderIds), [selectedFolderIds]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 bg-zinc-50 px-4 py-8 dark:bg-black">
-      <div>
-        <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Wraptor Vault</h1>
-        <Breadcrumb breadcrumb={initialBreadcrumb} onNavigate={navigateToFolder} />
+    <div className="flex h-screen flex-col bg-zinc-50 dark:bg-black">
+      {/* ── fixed header ── */}
+      <div className="flex-none border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
+        <div className="mb-3">
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Wraptor Vault</h1>
+          <Breadcrumb breadcrumb={initialBreadcrumb} onNavigate={navigateToFolder} />
+        </div>
+
+        <Uploader
+          folderId={currentFolderId}
+          onUploaded={(file) => setFiles((prev) => [file, ...prev])}
+        />
+
+        {error && (
+          <div className="mt-3 flex items-center justify-between rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
+            <span>{error}</span>
+            <button type="button" onClick={() => setError(null)} className="font-medium">
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        <div className="mt-3 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setNewFolderOpen(true)}
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+          >
+            New folder
+          </button>
+
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-zinc-600 dark:text-zinc-400">{selected.size} selected</span>
+              <button
+                type="button"
+                disabled={downloading}
+                onClick={() => handleDownloadZip(selectedFileIds, selectedFolderIds)}
+                className="rounded-md border border-zinc-300 px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                {downloading ? "Zipping…" : "Download ZIP"}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setMoveTarget({
+                    type: selectedFolderIds.length > 0 ? "folder" : "file",
+                    ids: [...selectedFolderIds, ...selectedFileIds],
+                  })
+                }
+                className="rounded-md border border-zinc-300 px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
+              >
+                Move
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setDeleteTarget({
+                    type: selectedFolderIds.length > 0 ? "folder" : "file",
+                    ids: [...selectedFolderIds, ...selectedFileIds],
+                    label: `${selected.size} item${selected.size > 1 ? "s" : ""}`,
+                  })
+                }
+                className="rounded-md border border-red-300 px-3 py-1.5 font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
+              >
+                Delete
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="text-zinc-500 hover:underline dark:text-zinc-400"
+              >
+                Clear
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      <Uploader
-        folderId={currentFolderId}
-        onUploaded={(file) => setFiles((prev) => [file, ...prev])}
-      />
-
-      {error && (
-        <div className="flex items-center justify-between rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400">
-          <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} className="font-medium">
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => setNewFolderOpen(true)}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-        >
-          New folder
-        </button>
-
-        {selected.size > 0 && (
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-zinc-600 dark:text-zinc-400">{selected.size} selected</span>
-            <button
-              type="button"
-              onClick={() =>
-                setMoveTarget({
-                  type: selectedFolderIds.length > 0 ? "folder" : "file",
-                  ids: [...selectedFolderIds, ...selectedFileIds],
-                })
-              }
-              className="rounded-md border border-zinc-300 px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-900"
-            >
-              Move
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setDeleteTarget({
-                  type: selectedFolderIds.length > 0 ? "folder" : "file",
-                  ids: [...selectedFolderIds, ...selectedFileIds],
-                  label: `${selected.size} item${selected.size > 1 ? "s" : ""}`,
-                })
-              }
-              className="rounded-md border border-red-300 px-3 py-1.5 font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950/40"
-            >
-              Delete
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelected(new Set())}
-              className="text-zinc-500 hover:underline dark:text-zinc-400"
-            >
-              Clear
-            </button>
+      {/* ── scrollable grid ── */}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
+        {folders.length === 0 && files.length === 0 ? (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">This folder is empty.</p>
+        ) : (
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9">
+            {folders.map((folder) => (
+              <FolderCard
+                key={folder.id}
+                folder={folder}
+                selected={selected.has(`folder:${folder.id}`)}
+                onToggleSelect={() => toggleSelect(`folder:${folder.id}`)}
+                onOpen={() => navigateToFolder(folder.id)}
+                onDownload={() => handleDownloadZip([], [folder.id])}
+                onShare={() =>
+                  setShareTarget({ type: "folder", id: folder.id, name: folder.name })
+                }
+                onRename={() =>
+                  setRenameTarget({ type: "folder", id: folder.id, name: folder.name })
+                }
+                onMove={() => setMoveTarget({ type: "folder", ids: [folder.id] })}
+                onDelete={() =>
+                  setDeleteTarget({ type: "folder", ids: [folder.id], label: `"${folder.name}"` })
+                }
+              />
+            ))}
+            {files.map((file) => (
+              <FileCard
+                key={file.id}
+                file={file}
+                selected={selected.has(`file:${file.id}`)}
+                onToggleSelect={() => toggleSelect(`file:${file.id}`)}
+                onOpen={() => handleFileOpen(file)}
+                onDownload={() => handleDownloadFile(file.id)}
+                onShare={() =>
+                  setShareTarget({ type: "file", id: file.id, name: file.display_name })
+                }
+                onRename={() =>
+                  setRenameTarget({ type: "file", id: file.id, name: file.display_name })
+                }
+                onMove={() => setMoveTarget({ type: "file", ids: [file.id] })}
+                onDelete={() =>
+                  setDeleteTarget({
+                    type: "file",
+                    ids: [file.id],
+                    label: `"${file.display_name}"`,
+                  })
+                }
+              />
+            ))}
           </div>
         )}
       </div>
 
-      {folders.length === 0 && files.length === 0 ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">This folder is empty.</p>
-      ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {folders.map((folder) => (
-            <FolderCard
-              key={folder.id}
-              folder={folder}
-              selected={selected.has(`folder:${folder.id}`)}
-              onToggleSelect={() => toggleSelect(`folder:${folder.id}`)}
-              onOpen={() => navigateToFolder(folder.id)}
-              onShare={() => setShareTarget({ type: "folder", id: folder.id, name: folder.name })}
-              onRename={() => setRenameTarget({ type: "folder", id: folder.id, name: folder.name })}
-              onMove={() => setMoveTarget({ type: "folder", ids: [folder.id] })}
-              onDelete={() =>
-                setDeleteTarget({ type: "folder", ids: [folder.id], label: `"${folder.name}"` })
-              }
-            />
-          ))}
-          {files.map((file) => (
-            <FileCard
-              key={file.id}
-              file={file}
-              selected={selected.has(`file:${file.id}`)}
-              onToggleSelect={() => toggleSelect(`file:${file.id}`)}
-              onOpen={() => handleFileOpen(file)}
-              onShare={() =>
-                setShareTarget({ type: "file", id: file.id, name: file.display_name })
-              }
-              onRename={() =>
-                setRenameTarget({ type: "file", id: file.id, name: file.display_name })
-              }
-              onMove={() => setMoveTarget({ type: "file", ids: [file.id] })}
-              onDelete={() =>
-                setDeleteTarget({ type: "file", ids: [file.id], label: `"${file.display_name}"` })
-              }
-            />
-          ))}
-        </div>
-      )}
-
       {viewerIndex !== null && (
         <MediaViewer
-          files={files}
+          files={mediaFiles}
           index={viewerIndex}
           onClose={() => setViewerIndex(null)}
           onIndexChange={setViewerIndex}
@@ -355,6 +424,15 @@ export function VaultBrowser({
   );
 }
 
+function triggerAnchorDownload(url: string, filename?: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  if (filename) a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 function Breadcrumb({
   breadcrumb,
   onNavigate,
@@ -375,7 +453,11 @@ function Breadcrumb({
             {isLast ? (
               <span className="font-medium text-zinc-800 dark:text-zinc-200">{folder.name}</span>
             ) : (
-              <button type="button" onClick={() => onNavigate(folder.id)} className="hover:underline">
+              <button
+                type="button"
+                onClick={() => onNavigate(folder.id)}
+                className="hover:underline"
+              >
                 {folder.name}
               </button>
             )}

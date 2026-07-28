@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { DotsIcon } from "./icons";
 
 export function ItemMenu({
+  onDownload,
   onShare,
   onRename,
   onMove,
   onDelete,
 }: {
+  onDownload: () => void;
   onShare: () => void;
   onRename: () => void;
   onMove: () => void;
@@ -30,6 +32,34 @@ export function ItemMenu({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [open]);
 
+  function MenuItem({
+    label,
+    onClick,
+    danger,
+  }: {
+    label: string;
+    onClick: () => void;
+    danger?: boolean;
+  }) {
+    return (
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(false);
+          onClick();
+        }}
+        className={`block w-full px-3 py-2 text-left ${
+          danger
+            ? "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
+            : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        }`}
+      >
+        {label}
+      </button>
+    );
+  }
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -45,51 +75,12 @@ export function ItemMenu({
       </button>
 
       {open && (
-        <div className="absolute right-0 z-10 mt-1 w-32 overflow-hidden rounded-md border border-zinc-200 bg-white text-sm shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setOpen(false);
-              onShare();
-            }}
-            className="block w-full px-3 py-2 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            Share
-          </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setOpen(false);
-              onRename();
-            }}
-            className="block w-full px-3 py-2 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            Rename
-          </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setOpen(false);
-              onMove();
-            }}
-            className="block w-full px-3 py-2 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          >
-            Move
-          </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setOpen(false);
-              onDelete();
-            }}
-            className="block w-full px-3 py-2 text-left text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
-          >
-            Delete
-          </button>
+        <div className="absolute right-0 z-10 mt-1 w-36 overflow-hidden rounded-md border border-zinc-200 bg-white text-sm shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
+          <MenuItem label="Download" onClick={onDownload} />
+          <MenuItem label="Share" onClick={onShare} />
+          <MenuItem label="Rename" onClick={onRename} />
+          <MenuItem label="Move" onClick={onMove} />
+          <MenuItem label="Delete" onClick={onDelete} danger />
         </div>
       )}
     </div>

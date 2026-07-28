@@ -139,6 +139,61 @@ export async function moveFile(id: string, folderId: string | null): Promise<Fil
   return rows[0] ?? null;
 }
 
+export async function listFilesForDownload(input: {
+  fileIds: string[];
+  folderIds: string[];
+}): Promise<FileRecord[]> {
+  const results: FileRecord[] = [];
+
+  if (input.fileIds.length > 0) {
+    const direct = await sql<FileRecord[]>`
+      select * from files where id = any(${input.fileIds}) and deleted_at is null
+    `;
+    results.push(...direct);
+  }
+
+  if (input.folderIds.length > 0) {
+    const fromFolders = await sql<FileRecord[]>`
+      with recursive tree as (
+        select id from folders where id = any(${input.folderIds})
+        union all
+        select f.id from folders f inner join tree t on f.parent_id = t.id
+      )
+      select files.* from files
+      inner join tree on files.folder_id = tree.id
+      where files.deleted_at is null
+    `;
+    results.push(...fromFolders);
+  }
+
+  const seen = new Set<string>();
+  return results.filter((f) => {
+    if (seen.has(f.id)) return false;
+    seen.add(f.id);
+    return true;
+  });
+}
+
+export async function updateFileThumbnail(
+  id: string,
+  input: {
+    thumbnailKey: string;
+    durationSeconds: number | null;
+    width: number | null;
+    height: number | null;
+  },
+): Promise<void> {
+  await sql`
+    update files
+    set
+      thumbnail_key = ${input.thumbnailKey},
+      duration_seconds = ${input.durationSeconds},
+      width = ${input.width},
+      height = ${input.height}
+    where id = ${id} and deleted_at is null
+  `;
+}
+
 export async function softDeleteFile(id: string): Promise<FileRecord | null> {
   const rows = await sql<FileRecord[]>`
     update files set deleted_at = now()

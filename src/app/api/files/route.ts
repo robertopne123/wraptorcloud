@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createFile, listFiles } from "@/lib/db/queries";
 import { mediaTypeFromContentType } from "@/lib/media";
 import { parseNullableIdParam } from "@/lib/id-param";
+import { processThumbnail } from "@/lib/process-thumbnail";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -22,13 +23,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "displayName is required" }, { status: 400 });
   }
 
-  const mediaType = typeof contentType === "string" ? mediaTypeFromContentType(contentType) : null;
-  if (!mediaType) {
-    return NextResponse.json(
-      { error: "contentType must be video/* or image/*" },
-      { status: 400 },
-    );
+  if (typeof contentType !== "string" || contentType.length === 0) {
+    return NextResponse.json({ error: "contentType is required" }, { status: 400 });
   }
+  const mediaType = mediaTypeFromContentType(contentType);
 
   if (typeof sizeBytes !== "number" || !Number.isFinite(sizeBytes) || sizeBytes <= 0) {
     return NextResponse.json(
@@ -48,6 +46,11 @@ export async function POST(request: Request) {
     mediaType,
     sizeBytes,
     folderId: folderId ?? null,
+  });
+
+  // Fire-and-forget — don't hold the response waiting for thumbnail generation.
+  processThumbnail(file.id, s3Key, mediaType).catch((err) => {
+    console.error("[thumbnail] Failed for file", file.id, err);
   });
 
   return NextResponse.json({ file }, { status: 201 });
