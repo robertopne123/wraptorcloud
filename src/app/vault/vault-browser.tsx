@@ -443,7 +443,7 @@ export function VaultBrowser({
 
       {shareTarget && <ShareModal target={shareTarget} onClose={() => setShareTarget(null)} />}
 
-      <MigrationProgress />
+      {process.env.NODE_ENV !== "production" && <MigrationProgress />}
     </div>
   );
 }
