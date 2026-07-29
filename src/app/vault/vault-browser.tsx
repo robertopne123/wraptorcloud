@@ -244,7 +244,21 @@ export function VaultBrowser({
       {/* ── fixed header ── */}
       <div className="flex-none border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
         <div className="mb-3">
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Wraptor Vault</h1>
+          <div className="flex items-center gap-2">
+            {(currentFolderId !== null || initialBreadcrumb.length > 0) && (
+              <button
+                type="button"
+                onClick={() => navigateToFolder(initialBreadcrumb.length > 1 ? initialBreadcrumb[initialBreadcrumb.length - 2].id : null)}
+                className="flex items-center justify-center rounded-md p-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                aria-label="Go back"
+              >
+                <svg viewBox="0 0 20 20" fill="none" className="h-5 w-5">
+                  <path d="M12 5L7 10l5 5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            )}
+            <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Wraptor Vault</h1>
+          </div>
           <Breadcrumb breadcrumb={initialBreadcrumb} onNavigate={navigateToFolder} />
         </div>
 
@@ -340,7 +354,7 @@ export function VaultBrowser({
             {query ? `No results for "${search}"` : "This folder is empty."}
           </p>
         ) : (
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9">
             {visibleFolders.map((folder) => (
               <FolderCard
                 key={folder.id}
