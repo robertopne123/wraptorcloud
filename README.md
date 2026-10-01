@@ -1,13 +1,19 @@
 # Wraptor Vault
 
-Internal media asset manager for uploading, organizing, and sharing video/image
-footage.
+Internal file manager for uploading, organizing, and sharing files of any type.
+Previews include images/video, PDF, Word (.docx), spreadsheets (.xlsx), text and
+audio with seekable waveforms. ZIP, TAR, TGZ and GZIP archives list their contents
+and can be extracted into a folder or All files through the resumable upload queue.
+Other formats remain available to download.
 
-**Stage 5 (this stage):** share links — generate a public link to a file or
-folder (view-only or view+download, with an optional expiry) that works with
-no auth at `/share/[token]`, for sending footage to people who don't have app
-access. Thumbnails are still icons, not real previews (Stage 6). The main app
-itself still has no authentication — every route is open.
+Document previews are limited to 20 MB. Archive previews/extraction support up to
+100 MB compressed, 250 MB expanded and 2,000 entries. Password-protected archives
+and links inside archives are not supported. Internal folder paths and empty files
+are preserved; existing files use the usual duplicate-file choices.
+
+Includes nested folders, image/video previews and thumbnails, ZIP downloads,
+public share links, a Google Drive importer, and a persistent upload queue.
+The main app still has no authentication — every route is open.
 
 ## Stack
 
@@ -119,10 +125,89 @@ src/lib/db/                Postgres client + query functions (client.ts is the q
 src/lib/share.ts           resolveShare() — the token/expiry/containment logic shared by the
                             share-links API route and the server-rendered /share page
 src/lib/s3.ts              S3 client + presignFileViewUrl(), used by both view-url routes
-src/lib/media.ts           Shared video/image content-type validation
+src/lib/media.ts           Media classification and download filenames
 ```
 
 ## How the file browser works
+
+### Persistent uploads
+
+The upload queue lives in the shared `/vault` layout. Every job captures its
+destination folder when files are selected, so you can navigate to another
+folder and add more files while earlier uploads continue. The queue transfers
+at most three files concurrently; thumbnail processing is limited to two jobs
+per server process. Transfer slots rotate between destination folders so a
+new folder's files do not wait behind another folder's entire batch.
+
+Source files and job metadata are saved in IndexedDB before transfer starts.
+Wait until the "Saving files" message disappears before refreshing. On reload,
+the queue restores unfinished jobs and asks S3 which multipart chunks are
+already present, uploading only the missing chunks. Completed sources are
+removed from browser storage after the file record is saved in Postgres.
+Retries use the same S3 key, and recording a file is idempotent by that key.
+
+Chunks default to 10 MiB (larger for very large files). Network errors retry
+with exponential backoff; transfers with no byte progress for two minutes
+are aborted and retried. Offline jobs wait for connectivity. Exhausted retries
+remain visible with a Retry button, and retain their locally saved source.
+Web Locks prevent two tabs from transferring the same job simultaneously.
+
+Refresh briefly interrupts the network transfer, then it resumes. Closing the
+browser pauses uploads until the Vault is reopened on the same origin and
+browser profile. This requires HTTPS or localhost, browser storage, and enough
+local disk space for pending files. Quota/storage failures are shown explicitly;
+files that cannot be saved locally are not silently queued. Clearing site data
+removes pending sources.
+
+The S3 credentials need `s3:GetObject`, `s3:PutObject`, and
+`s3:ListMultipartUploadParts` permissions on the bucket's objects. Existing
+browser PUT CORS configuration also applies to multipart chunks; no exposed
+ETag header is required because the server lists parts directly. Configure an
+S3 lifecycle rule to abort old incomplete multipart uploads if abandoned jobs
+should be cleaned up automatically.
+
+Run the upload recovery tests with `npm run test:uploads`.
+For AWS diagnostics, run `npx tsx scripts/check-storage.ts` (read-only).
+`npx tsx scripts/check-upload.ts` performs a live chunk upload/recovery check
+and aborts its temporary multipart session; it also requires
+`s3:AbortMultipartUpload`. It creates no completed file or database record.
+
+### Duplicate files and versions
+
+Before transferring bytes, the queue checks for a file with the same name in
+the destination folder (case-insensitive). Conflicts offer **New version**,
+**Replace**, or **Skip**, with a checkbox to reuse the action for remaining
+duplicates in that selection batch. Choices and waiting conflicts survive
+refresh. Files with the same destination/name are processed in order, and
+the server rechecks conflicts under a transaction lock before saving.
+
+New version archives the previous metadata and S3 key, increments the version
+number, and retains the file ID so existing share links continue to work.
+Replace updates the current content without adding a history entry. Previous
+versions are available through the file menu's **Version history** action.
+Upload receipts prevent replayed completion requests from creating duplicate
+records or history entries. Thumbnail updates are scoped to the source S3 key
+so processing an older version cannot change the current preview.
+
+Existing databases need `0008_file_versions.sql`; apply just that migration
+with `npx tsx scripts/apply-version-migration.ts`, rather than rerunning earlier
+column-renaming migrations. It has been applied to the current configured DB.
+
+### Transfer progress
+
+Uploads and ZIP downloads share one bottom-right transfer panel; the Drive
+migration window has been removed. ZIP downloads show preparation, bytes
+received, elapsed time, and cancellation/failure feedback while the archive
+streams. The panel remains visible during folder navigation. **Clear transfers**
+removes finished uploads/downloads and closes the empty panel; **Clear completed**
+keeps unfinished jobs and pending choices intact. ZIP size is unknown until
+generation ends, so its progress indicator does not show an estimated percentage.
+
+Run ZIP streaming/cancellation tests with `npm run test:downloads`. The live
+`npx tsx scripts/check-file-versions.ts` check uses and removes an isolated
+temporary database folder; it writes no S3 objects.
+
+### Browsing and actions
 
 - `/vault` is the root folder; `/vault/[folderId]` is a nested folder — the
   URL is the source of truth for what's open, so folders are linkable and

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { FileRecord, Folder, SharePermission } from "@/lib/db/types";
 import { MediaViewer } from "@/app/vault/viewer";
+import { FilePreview } from "@/app/vault/file-preview";
 import { PublicFolderBrowser } from "./public-folder-browser";
 
 type ShareData =
@@ -47,9 +48,15 @@ export function ShareView({
       );
     }
 
+    if (data.file.media_type === "other") {
+      return <FilePreview file={data.file} onClose={() => setFileViewerClosed(true)}
+        endpoint={`/api/share-links/${token}/files/${data.file.id}/preview`}
+        downloadEndpoint={getDownloadUrl(data.file.id)} allowDownload={permission === "download"} allowExtract={false} />;
+    }
     return (
       <div className="min-h-screen bg-black">
         <MediaViewer
+          allowNotes={false}
           files={[data.file]}
           index={0}
           onClose={() => setFileViewerClosed(true)}

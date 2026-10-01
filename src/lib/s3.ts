@@ -15,12 +15,15 @@ export const S3_BUCKET_NAME = process.env.S3_BUCKET_NAME ?? "";
 
 const VIEW_URL_EXPIRY_SECONDS = 60 * 60;
 
-export async function getObjectBuffer(key: string): Promise<Buffer> {
+export async function getObjectBuffer(key: string, maxBytes = Infinity): Promise<Buffer> {
   const response = await s3Client.send(
     new GetObjectCommand({ Bucket: S3_BUCKET_NAME, Key: key }),
   );
   const chunks: Uint8Array[] = [];
+  let bytes = 0;
   for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
+    bytes += chunk.length;
+    if (bytes > maxBytes) throw new Error("File is too large for this preview");
     chunks.push(chunk);
   }
   return Buffer.concat(chunks);
@@ -40,11 +43,12 @@ export async function presignKeyUrl(key: string): Promise<string> {
 // Always generates fresh — never cache or persist the result.
 export async function presignFileViewUrl(
   file: FileRecord,
-  { attachment }: { attachment: boolean },
+  { attachment, contentType }: { attachment: boolean; contentType?: string },
 ): Promise<string> {
   const command = new GetObjectCommand({
     Bucket: S3_BUCKET_NAME,
     Key: file.s3_key,
+    ...(contentType ? { ResponseContentType: contentType, ResponseContentDisposition: "inline" } : {}),
     ...(attachment
       ? { ResponseContentDisposition: contentDispositionAttachment(file.display_name) }
       : {}),

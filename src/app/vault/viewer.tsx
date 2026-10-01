@@ -9,6 +9,7 @@ import Video from "yet-another-react-lightbox/plugins/video";
 import "yet-another-react-lightbox/styles.css";
 import "yet-another-react-lightbox/plugins/captions.css";
 import type { FileRecord } from "@/lib/db/types";
+import { MediaNotes } from "./media-notes";
 
 type SlideStatus = "loading" | "ready" | "error";
 
@@ -81,6 +82,7 @@ export function MediaViewer({
   getViewUrl = (fileId) => `/api/files/${fileId}/view-url`,
   getDownloadUrl = (fileId) => `/api/files/${fileId}/view-url?disposition=attachment`,
   allowDownload = true,
+  allowNotes = true,
 }: {
   files: FileRecord[];
   index: number;
@@ -95,6 +97,7 @@ export function MediaViewer({
   // enforcement lives server-side in the presign route — this is just so
   // the UI doesn't offer a control that would be rejected anyway.
   allowDownload?: boolean;
+  allowNotes?: boolean;
 }) {
   const [resolved, setResolved] = useState<Record<string, ResolvedSlide>>({});
   const requestedRef = useRef<Set<string>>(new Set());
@@ -149,7 +152,13 @@ export function MediaViewer({
       }}
       controller={{ closeOnBackdropClick: true, closeOnEscape: true }}
       video={{ controls: true, autoPlay: false }}
-      render={{ slide: renderSlide }}
+      styles={allowNotes ? { container: { right: "min(360px, 45vw)", overflow: "visible" } } : undefined}
+      render={{
+        slide: renderSlide,
+        controls: () => allowNotes && files[index]?.media_type !== "other" && files[index]
+          ? <MediaNotes fileId={files[index].id} />
+          : null,
+      }}
       plugins={allowDownload ? [Zoom, Captions, Download, Video] : [Zoom, Captions, Video]}
       download={
         allowDownload

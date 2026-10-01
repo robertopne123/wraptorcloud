@@ -6,7 +6,7 @@ import {
   listFiles,
   listFolders,
 } from "@/lib/db/queries";
-import { VaultBrowser } from "../vault-browser";
+import { VaultWorkspace } from "../vault-workspace";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +30,7 @@ export default async function VaultFolderPage({
   ]);
 
   return (
-    <VaultBrowser
+    <VaultWorkspace
       key={folderId}
       currentFolderId={folderId}
       initialFolders={folders}

@@ -13,10 +13,13 @@ export type Folder = {
   parent_id: string | null;
   owner_id: string | null;
   created_at: string;
+  file_count?: number;
+  folder_count?: number;
 };
 
 export type FileRecord = {
   id: string;
+  version_number: number;
   folder_id: string | null;
   owner_id: string | null;
   display_name: string;
@@ -32,6 +35,11 @@ export type FileRecord = {
   created_at: string;
   deleted_at: string | null;
 };
+
+export type FileVersion = Pick<FileRecord,
+  "id" | "version_number" | "display_name" | "s3_key" | "mime_type" | "media_type" |
+  "size_bytes" | "duration_seconds" | "width" | "height" | "thumbnail_key" | "created_at"
+> & { file_id: string; archived_at: string };
 
 export type SharePermission = "view" | "download";
 

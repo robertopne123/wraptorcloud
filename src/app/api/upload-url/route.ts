@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { s3Client, S3_BUCKET_NAME } from "@/lib/s3";
-import { mediaTypeFromContentType } from "@/lib/media";
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 10 * 60;
 
@@ -20,16 +19,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "filename is required" }, { status: 400 });
   }
 
-  if (typeof contentType !== "string" || !mediaTypeFromContentType(contentType)) {
+  if (typeof contentType !== "string" || contentType.trim().length === 0) {
     return NextResponse.json(
-      { error: "contentType must be video/* or image/*" },
+      { error: "contentType is required" },
       { status: 400 },
     );
   }
 
-  if (typeof sizeBytes !== "number" || !Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+  if (typeof sizeBytes !== "number" || !Number.isSafeInteger(sizeBytes) || sizeBytes < 0) {
     return NextResponse.json(
-      { error: "sizeBytes must be a positive number" },
+      { error: "sizeBytes must be a non-negative integer" },
       { status: 400 },
     );
   }

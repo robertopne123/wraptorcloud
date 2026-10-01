@@ -2,9 +2,10 @@
 
 import { useCallback, useState } from "react";
 import type { FileRecord, Folder, SharePermission } from "@/lib/db/types";
-import { FolderIcon, VideoIcon, ImageIcon } from "@/app/vault/icons";
+import { FolderIcon, VideoIcon, ImageIcon, FileIcon } from "@/app/vault/icons";
 import { formatBytes, formatDate } from "@/app/vault/format";
 import { MediaViewer } from "@/app/vault/viewer";
+import { FilePreview } from "@/app/vault/file-preview";
 
 type FolderData = {
   sharedFolder: Folder;
@@ -27,6 +28,8 @@ export function PublicFolderBrowser({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<FileRecord | null>(null);
+  const mediaFiles = data.files.filter((file) => file.media_type !== "other");
 
   const navigateToFolder = useCallback(
     async (folderId: string) => {
@@ -106,13 +109,16 @@ export function PublicFolderBrowser({
               </span>
             </button>
           ))}
-          {data.files.map((file, fileIndex) => {
-            const Icon = file.media_type === "video" ? VideoIcon : ImageIcon;
+          {data.files.map((file) => {
+            const Icon = file.media_type === "video" ? VideoIcon : file.media_type === "image" ? ImageIcon : FileIcon;
             return (
               <button
                 key={file.id}
                 type="button"
-                onClick={() => setViewerIndex(fileIndex)}
+                onClick={() => {
+                  if (file.media_type === "other") setPreviewTarget(file);
+                  else setViewerIndex(mediaFiles.findIndex((candidate) => candidate.id === file.id));
+                }}
                 className="flex flex-col items-center gap-2 rounded-lg border border-zinc-200 p-3 py-4 text-center hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900/50"
               >
                 <Icon className="h-10 w-10 text-zinc-400 dark:text-zinc-500" />
@@ -130,7 +136,8 @@ export function PublicFolderBrowser({
 
       {viewerIndex !== null && (
         <MediaViewer
-          files={data.files}
+          allowNotes={false}
+          files={mediaFiles}
           index={viewerIndex}
           onClose={() => setViewerIndex(null)}
           onIndexChange={setViewerIndex}
@@ -139,6 +146,9 @@ export function PublicFolderBrowser({
           allowDownload={permission === "download"}
         />
       )}
+      {previewTarget && <FilePreview key={previewTarget.id} file={previewTarget} onClose={() => setPreviewTarget(null)}
+        endpoint={`/api/share-links/${token}/files/${previewTarget.id}/preview`}
+        downloadEndpoint={getDownloadUrl(previewTarget.id)} allowDownload={permission === "download"} allowExtract={false} />}
     </div>
   );
 }
