@@ -60,29 +60,29 @@ export function Uploader({ folderId, folderName, onUploaded, onFoldersCreated }:
         if (!ready || preparing) return;
         void addSelection(readDroppedItems(Array.from(event.dataTransfer.items), Array.from(event.dataTransfer.files)));
       }}
-      className={`flex items-center justify-between gap-3 rounded-xl border-2 border-dashed px-4 py-3 transition ${
+      className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed p-2 transition sm:gap-3 sm:border-2 sm:px-4 sm:py-3 ${
         isDragging ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-zinc-300 dark:border-zinc-700"
       }`}
     >
-      <div>
+      <div className="hidden sm:block">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">Drag and drop files or folders here</p>
         <p className="mt-1 text-xs text-zinc-500">All file types supported.</p>
         <p className="mt-1 text-xs text-zinc-500">Uploads continue across folders and resume after refresh.</p>
-        {preparing && <p role="status" className="mt-1 text-xs text-zinc-500">Preparing upload…</p>}
-        {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
       </div>
-      <div className="flex shrink-0 flex-wrap gap-2">
+      <div className="flex w-full shrink-0 gap-2 sm:w-auto sm:flex-wrap">
       <button
         type="button" disabled={!ready || preparing} onClick={() => fileInputRef.current?.click()}
-        className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+        className="min-h-11 flex-1 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 sm:min-h-0 sm:flex-none sm:py-1.5 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
       >
         Choose files
       </button>
       <button
         type="button" disabled={!ready || preparing} onClick={() => folderInputRef.current?.click()}
-        className="shrink-0 rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+        className="min-h-11 flex-1 rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium hover:bg-zinc-100 disabled:opacity-50 sm:min-h-0 sm:flex-none sm:py-1.5 dark:border-zinc-700 dark:hover:bg-zinc-800"
       >Choose folder</button>
       </div>
+      {preparing && <p role="status" className="w-full text-xs text-zinc-500">Preparing upload…</p>}
+      {error && <p role="alert" className="w-full text-xs text-red-600">{error}</p>}
       <input ref={fileInputRef} type="file" multiple disabled={!ready}
         onChange={(event) => { addFiles(event.target.files); event.target.value = ""; }}
         className="hidden" aria-label="Choose files to upload" />

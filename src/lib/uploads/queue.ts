@@ -105,7 +105,18 @@ export class UploadQueue {
 
   start = () => this.starting ??= (async () => {
     try {
-      const saved = await this.deps.storage.list();
+      const saved: UploadJob[] = [];
+      for (const job of await this.deps.storage.list()) {
+        if (job.status === "done" || job.status === "skipped") { saved.push(job); continue; }
+        // Check under the worker lock: another tab may have finished and freed
+        // the source since we read the history.
+        await this.deps.lock(job.id, async () => {
+          const current = (await this.deps.storage.list()).find((item) => item.id === job.id);
+          if (!current) return;
+          if (current.status === "done" || current.status === "skipped" || await this.deps.storage.source(job.id)) saved.push(current);
+          else await this.deps.storage.remove(job.id);
+        });
+      }
       for (const job of saved) {
         if (job.batchId && job.defaultConflictAction) this.batchActions.set(job.batchId, job.defaultConflictAction);
       }
@@ -153,6 +164,23 @@ export class UploadQueue {
     const next: UploadJob = { ...job, status: "queued", error: undefined };
     try { await this.deps.storage.save(next); this.update(next); this.pump(); }
     catch { this.publish({ error: "Could not save the retry. Check browser storage." }); }
+  };
+
+  removeFailed = async (id: string) => {
+    if (this.snapshot.jobs.find((job) => job.id === id)?.status !== "failed") return;
+    try {
+      await this.deps.lock(id, async () => {
+        if (this.active.has(id) || this.snapshot.jobs.find((job) => job.id === id)?.status !== "failed") return;
+        const saved = (await this.deps.storage.list()).find((job) => job.id === id);
+        if (saved && saved.status !== "failed") { this.update(saved); return; }
+        await this.deps.storage.remove(id);
+        this.publish({ jobs: this.snapshot.jobs.filter((job) => job.id !== id) });
+      });
+    } catch { this.publish({ error: "Could not remove the failed upload. Check browser storage." }); }
+  };
+
+  clearFailed = async () => {
+    for (const job of this.snapshot.jobs.filter((job) => job.status === "failed")) await this.removeFailed(job.id);
   };
 
   clearCompleted = async () => {
@@ -250,7 +278,11 @@ export class UploadQueue {
     try {
       await this.save(job);
       const source = await this.deps.storage.source(job.id);
-      if (!source) throw new Error("Saved source file is missing. Choose the file again.");
+      if (!source) {
+        await this.deps.storage.remove(job.id);
+        this.publish({ jobs: this.snapshot.jobs.filter((current) => current.id !== job.id) });
+        return;
+      }
       const conflict = await this.retryRequest(() => this.deps.request<{ file: FileRecord | null; completed?: FileRecord | null }>(
         "/api/uploads/conflict", { id: job.id, name: job.name, folderId: job.folderId }));
       if (conflict.completed) {

@@ -1,0 +1,117 @@
+⨯ Error [PostgresError]: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  code: 'XX000',
+  severity_local: 'FATAL',
+  digest: '1378109150'
+}
+⨯ Error [PostgresError]: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  code: 'XX000',
+  severity_local: 'FATAL',
+  digest: '1378109150'
+}
+⨯ Error [PostgresError]: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  code: 'XX000',
+  severity_local: 'FATAL',
+  digest: '1378109150'
+}
+⨯ Error [PostgresError]: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  code: 'XX000',
+  severity_local: 'FATAL',
+  digest: '1378109150'
+}
+⨯ Error [PostgresError]: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  code: 'XX000',
+  severity_local: 'FATAL',
+  digest: '1378109150'
+}
+⨯ Error [PostgresError]: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  code: 'XX000',
+  severity_local: 'FATAL',
+  digest: '1378109150'
+}
+⨯ Error [PostgresError]: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  code: 'XX000',
+  severity_local: 'FATAL',
+  digest: '1378109150'
+}
+⨯ Error [PostgresError]: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  code: 'XX000',
+  severity_local: 'FATAL',
+  digest: '1378109150'
+}
+⨯ Error [PostgresError]: (EMAXCONNSESSION) max clients reached in session mode - max clients are limited to pool_size: 15
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  code: 'XX000',
+  severity_local: 'FATAL',
+  digest: '1378109150'
+}

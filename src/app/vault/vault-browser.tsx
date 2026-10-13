@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useContext, useEffect, useMemo, useRef, useState, type DragEvent, type HTMLAttributes, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { VaultWorkspaceContext } from "./vault-workspace-context";
 import { useRouter } from "next/navigation";
@@ -75,100 +75,6 @@ export function VaultBrowser({
   const downloading = isZipDownloadActive(useZipDownload());
   const [search, setSearch] = useState("");
   const workspace = useContext(VaultWorkspaceContext);
-  const localDragItems = useRef<SelectionKey[]>([]);
-  const localMovePending = useRef(false);
-  const dragItems = workspace?.dragItems ?? localDragItems;
-  const movePending = workspace?.movePending ?? localMovePending;
-  const [moving, setMoving] = useState(false);
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
-
-  function dragSource(key: SelectionKey): HTMLAttributes<HTMLDivElement> {
-    return {
-      draggable: !moving,
-      onDragStart: (event) => {
-        if (movePending.current) { event.preventDefault(); return; }
-        dragItems.current = selected.has(key) ? [...selected] : [key];
-        if (workspace) workspace.sourceFolder.current = currentFolderId;
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("application/x-wraptor-vault-items", JSON.stringify(dragItems.current));
-        event.dataTransfer.setDragImage(event.currentTarget, 30, 30);
-      },
-      onDragEnd: () => { dragItems.current = []; setDropTarget(null); },
-    };
-  }
-
-  function canDrop(folderId: string | null) {
-    if (movePending.current || !dragItems.current.length || folderId === (workspace ? workspace.sourceFolder.current : currentFolderId)) return false;
-    const draggedFolders = new Set(dragItems.current.filter((key) => key.startsWith("folder:")).map((key) => key.slice(7)));
-    let ancestor = folderId;
-    const visited = new Set<string>();
-    while (ancestor !== null) {
-      if (draggedFolders.has(ancestor) || visited.has(ancestor)) return false;
-      visited.add(ancestor);
-      ancestor = folderTree.find((folder) => folder.id === ancestor)?.parent_id ?? null;
-    }
-    return true;
-  }
-
-  function dropDestination(folderId: string | null): HTMLAttributes<HTMLElement> {
-    const target = folderId ?? "root";
-    function dragOver(event: DragEvent<HTMLElement>) {
-      if (!dragItems.current.length) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.dataTransfer.dropEffect = canDrop(folderId) ? "move" : "none";
-      setDropTarget(canDrop(folderId) ? target : null);
-    }
-    return {
-      onDragEnter: dragOver,
-      onDragOver: dragOver,
-      onDragLeave: (event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null);
-      },
-      onDrop: (event) => {
-        if (!dragItems.current.length) return;
-        event.preventDefault();
-        event.stopPropagation();
-        const items = [...dragItems.current];
-        const allowed = canDrop(folderId);
-        dragItems.current = [];
-        setDropTarget(null);
-        if (allowed) void moveItems(items, folderId);
-      },
-      className: dropTarget === target ? "rounded-lg ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-950/50" : undefined,
-    };
-  }
-
-  async function moveItems(items: SelectionKey[], targetFolderId: string | null) {
-    if (movePending.current) return;
-    movePending.current = true;
-    setMoving(true);
-    setError(null);
-    try {
-      const results = await Promise.allSettled(items.map(async (key) => {
-        const [type, id] = key.split(":");
-        const response = await fetch(`/api/${type === "folder" ? "folders" : "files"}/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(type === "folder" ? { parentId: targetFolderId } : { folderId: targetFolderId }),
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          throw new Error(body.error ?? "Could not move item");
-        }
-      }));
-      const failed = results.find((result) => result.status === "rejected");
-      if (failed?.status === "rejected") setError(failed.reason instanceof Error ? failed.reason.message : "Move failed. Please try again.");
-      await refresh();
-    } catch {
-      setError("Could not refresh after moving. Please reload to check your items.");
-    } finally {
-      movePending.current = false;
-      setMoving(false);
-      workspace?.changed();
-    }
-  }
-
   const refresh = useCallback(async () => {
     const [contentsRes, treeRes] = await Promise.all([
       fetch(`/api/folders?parentId=${currentFolderId ?? "null"}`),
@@ -371,7 +277,7 @@ export function VaultBrowser({
             )}
             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{folderName ?? initialBreadcrumb.at(-1)?.name ?? "Vault root"}</span>
           </div>
-          <Breadcrumb breadcrumb={initialBreadcrumb} onNavigate={navigateToFolder} dropDestination={dropDestination} />
+          <Breadcrumb breadcrumb={initialBreadcrumb} onNavigate={navigateToFolder} />
         </div>
 
         <div className="mb-3 relative">
@@ -456,11 +362,8 @@ export function VaultBrowser({
 
       {/* ── scrollable grid ── */}
       </VaultHeader>
-      {splitView && <div className="flex-none border-b border-zinc-200 px-6 py-2 dark:border-zinc-800"><Breadcrumb breadcrumb={initialBreadcrumb} onNavigate={navigateToFolder} dropDestination={dropDestination} /></div>}
-      <div {...dropDestination(currentFolderId)} className={`flex-1 overflow-y-auto px-6 py-4 ${dropTarget === (currentFolderId ?? "root") ? "ring-2 ring-inset ring-blue-500" : ""}`}>
-        <p role="status" className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-          {moving ? "Moving items…" : "Drag files or folders into a folder, or onto a breadcrumb to move them. Selected items move together."}
-        </p>
+      {splitView && <div className="flex-none border-b border-zinc-200 px-6 py-2 dark:border-zinc-800"><Breadcrumb breadcrumb={initialBreadcrumb} onNavigate={navigateToFolder} /></div>}
+      <div className="flex-1 overflow-y-auto px-6 py-4">
         {gridStatus ? gridStatus : visibleFolders.length === 0 && visibleFiles.length === 0 ? (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             {query ? `No results for "${search}"` : "This folder is empty."}
@@ -468,7 +371,7 @@ export function VaultBrowser({
         ) : (
           <div className={`grid gap-3 ${splitView ? "grid-cols-2 md:grid-cols-3 xl:grid-cols-4" : "grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 xl:grid-cols-9"}`}>
             {visibleFolders.map((folder) => (
-              <div key={folder.id} {...dragSource(`folder:${folder.id}`)} {...dropDestination(folder.id)}>
+              <div key={folder.id}>
               <FolderCard
                 key={folder.id}
                 folder={folder}
@@ -491,7 +394,7 @@ export function VaultBrowser({
               </div>
             ))}
             {visibleFiles.map((file) => (
-              <div key={file.id} {...dragSource(`file:${file.id}`)}>
+              <div key={file.id}>
               <FileCard
                 key={file.id}
                 file={file}
@@ -599,21 +502,19 @@ function triggerAnchorDownload(url: string, filename?: string) {
 function Breadcrumb({
   breadcrumb,
   onNavigate,
-  dropDestination,
 }: {
   breadcrumb: Folder[];
   onNavigate: (folderId: string | null) => void;
-  dropDestination: (folderId: string | null) => HTMLAttributes<HTMLElement>;
 }) {
   return (
     <nav className="flex flex-wrap items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
-      <button type="button" onClick={() => onNavigate(null)} {...dropDestination(null)}>
+      <button type="button" onClick={() => onNavigate(null)}>
         Root
       </button>
       {breadcrumb.map((folder, index) => {
         const isLast = index === breadcrumb.length - 1;
         return (
-          <span key={folder.id} {...dropDestination(folder.id)}>
+          <span key={folder.id}>
             <span>/</span>
             {isLast ? (
               <span className="font-medium text-zinc-800 dark:text-zinc-200">{folder.name}</span>

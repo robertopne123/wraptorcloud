@@ -129,13 +129,18 @@ export function TransferPanel() {
                       <div className={`h-full rounded-full transition-[width] ${job.status === "failed" ? "bg-red-500" : job.status === "done" ? "bg-green-500" : "bg-blue-500"}`} style={{ width: `${job.progress}%` }} />
                     </div>
                     {job.status === "failed" && <div className="flex items-start justify-between gap-2"><p className="text-xs text-red-300">{job.error}</p>
-                      <button type="button" onClick={() => void uploadQueue.retry(job.id)} className="shrink-0 rounded border border-zinc-600 px-2 py-1 text-xs hover:bg-zinc-800">Retry</button></div>}
+                      <div className="flex shrink-0 gap-1">
+                        <button type="button" onClick={() => void uploadQueue.retry(job.id)} className="rounded border border-zinc-600 px-2 py-1 text-xs hover:bg-zinc-800">Retry</button>
+                        <button type="button" aria-label={`Remove failed upload ${job.name}`} onClick={() => void uploadQueue.removeFailed(job.id)} className="rounded border border-zinc-600 px-2 py-1 text-xs hover:bg-zinc-800">Remove</button>
+                      </div></div>}
                   </div>
                 ))}
               </div>
               {jobs.length > visibleJobs.length && <p className="text-xs text-zinc-500">Showing {visibleJobs.length} of {jobs.length} files. Active uploads appear first.</p>}
             </section>
           )}
+          {failed > 0 && <button type="button" onClick={() => void uploadQueue.clearFailed()}
+            className="w-full rounded border border-zinc-600 px-3 py-2 text-xs font-medium hover:bg-zinc-800">Clear failed uploads</button>}
           {(done > 0 || skipped > 0 || zipSettled || error) && <button type="button" onClick={() => void clearTransfers()}
             className="w-full rounded border border-zinc-600 px-3 py-2 text-xs font-medium hover:bg-zinc-800">{canClose ? "Clear transfers" : "Clear completed"}</button>}
         </div>

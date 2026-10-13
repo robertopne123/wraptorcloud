@@ -26,7 +26,12 @@ function Tile({
 }) {
   return (
     <div
-      className={`flex flex-col gap-1 rounded-lg border p-3 transition ${
+      onClick={(event) => {
+        // The checkbox and menu handle their own actions; the rest opens.
+        if ((event.target as Element).closest("button, input")) return;
+        onOpen();
+      }}
+      className={`flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition ${
         selected
           ? "border-blue-500 bg-blue-50 ring-2 ring-blue-500 dark:border-blue-400 dark:bg-blue-950/50 dark:ring-blue-400"
           : "border-zinc-200 hover:border-blue-300 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-blue-700 dark:hover:bg-zinc-900/50"
@@ -46,14 +51,11 @@ function Tile({
       <button
         type="button"
         onClick={(event) => {
-          // Native keyboard activation opens; the first pointer click selects.
-          if (event.detail === 0) onOpen();
-          else if (event.detail === 1 && !selected) onToggleSelect();
+          event.stopPropagation();
+          onOpen();
         }}
-        onDoubleClick={onOpen}
-        aria-pressed={selected}
-        aria-label={`${title}. Click to select, double-click to open, or press Enter to open.`}
-        className="flex cursor-pointer flex-col items-center gap-2 rounded py-2 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        aria-label={`Open ${title}`}
+        className="flex touch-manipulation cursor-pointer flex-col items-center gap-2 rounded py-2 text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
       >
         {icon}
         <span className="line-clamp-2 w-full text-sm text-zinc-800 dark:text-zinc-200">
@@ -72,7 +74,10 @@ function Tile({
             Open
           </button>
         ) : (
-          <span className="text-xs text-zinc-500 dark:text-zinc-400">Double-click to open</span>
+          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="[@media(pointer:coarse)]:hidden">Click to open</span>
+            <span className="hidden [@media(pointer:coarse)]:inline">Tap to open</span>
+          </span>
         )}
       </div>
     </div>
@@ -196,6 +201,7 @@ function FileThumbnail({
   if (thumbnailUrl) {
     return (
       <img
+        draggable={false}
         src={thumbnailUrl}
         alt=""
         className="h-20 w-full rounded object-cover"

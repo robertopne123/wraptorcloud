@@ -127,6 +127,42 @@ test("large batches use at most three workers and keep each destination folder",
   assert.equal(h.sources.size, 0);
 });
 
+test("refresh removes unfinished uploads without sources, even offline, and preserves history", async () => {
+  const h = harness(); h.setOnline(false);
+  for (const status of ["queued", "uploading", "failed", "conflict"] as const) {
+    const job = savedJob({ status }); h.jobs.set(job.id, job);
+  }
+  const retained = [savedJob({ status: "done" }), savedJob({ status: "skipped" }), savedJob({ status: "failed" })];
+  for (const job of retained) h.jobs.set(job.id, job);
+  h.sources.set(retained[2].id, new Blob(["x"]));
+  const queue = new UploadQueue(h.deps); await queue.start();
+  assert.equal(queue.getSnapshot().ready, true);
+  assert.deepEqual(queue.getSnapshot().jobs.map((job) => job.id), retained.map((job) => job.id));
+  assert.deepEqual([...h.jobs.keys()], retained.map((job) => job.id));
+  assert.equal(h.calls.length, 0);
+});
+
+test("sources lost after startup are removed when the worker resumes", async () => {
+  const h = harness(); h.setOnline(false);
+  const job = savedJob({ status: "queued" });
+  h.jobs.set(job.id, job); h.sources.set(job.id, new Blob(["x"]));
+  const queue = new UploadQueue(h.deps); await queue.start();
+  h.sources.delete(job.id); h.setOnline(true); queue.pump();
+  await until(() => queue.getSnapshot().jobs.length === 0);
+  assert.equal(h.jobs.size, 0); assert.equal(h.calls.length, 0);
+});
+
+test("startup preserves an upload completed by another tab while waiting for its lock", async () => {
+  const h = harness(); const job = savedJob(); h.jobs.set(job.id, job);
+  h.deps.lock = async (_id, run) => {
+    h.jobs.set(job.id, { ...job, status: "done", progress: 100 });
+    await run();
+  };
+  const queue = new UploadQueue(h.deps); await queue.start();
+  assert.equal(queue.getSnapshot().jobs[0].status, "done");
+  assert.equal(h.jobs.size, 1); assert.equal(h.calls.length, 0);
+});
+
 test("refresh restores the saved source and only uploads parts missing from S3", async () => {
   const h = harness();
   const job = savedJob();
@@ -175,6 +211,34 @@ test("transient failures retry automatically; exhausted retries retain the sourc
   await until(() => queue.getSnapshot().jobs[0].status === "done");
   assert.equal(h.sources.size, 0);
   assert.equal(new Set(h.calls.filter((call) => call.body.action === "part").map((call) => call.body.uploadId)).size, 1);
+});
+
+test("failed connection uploads can be removed individually or cleared without removing queued files", async () => {
+  const h = harness(); h.setOnline(false);
+  const failed = [savedJob({ status: "failed", error: "Connection interrupted" }), savedJob({ status: "failed" })];
+  const queued = savedJob({ status: "queued" });
+  for (const job of [...failed, queued]) { h.jobs.set(job.id, job); h.sources.set(job.id, new Blob(["x"])); }
+  const queue = new UploadQueue(h.deps); await queue.start();
+  await queue.removeFailed(failed[0].id);
+  assert.equal(h.jobs.has(failed[0].id), false); assert.equal(h.sources.has(failed[0].id), false);
+  await queue.clearFailed();
+  assert.deepEqual(queue.getSnapshot().jobs.map((job) => job.id), [queued.id]);
+  assert.deepEqual([...h.sources.keys()], [queued.id]);
+  const restored = new UploadQueue(h.deps); await restored.start();
+  assert.deepEqual(restored.getSnapshot().jobs.map((job) => job.id), [queued.id]);
+});
+
+test("removing a failed upload preserves a retry completed in another tab", async () => {
+  const h = harness(); h.setOnline(false);
+  const job = savedJob({ status: "failed" });
+  h.jobs.set(job.id, job); h.sources.set(job.id, new Blob(["x"]));
+  const queue = new UploadQueue(h.deps); await queue.start();
+  h.deps.lock = async (_id, run) => {
+    h.jobs.set(job.id, { ...job, status: "done", progress: 100 }); h.sources.delete(job.id);
+    await run();
+  };
+  await queue.removeFailed(job.id);
+  assert.equal(queue.getSnapshot().jobs[0].status, "done"); assert.equal(h.jobs.size, 1);
 });
 
 test("offline files remain queued until connectivity returns", async () => {

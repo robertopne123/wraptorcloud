@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { databaseConnection } from "./connection";
 
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -12,8 +13,9 @@ if (!databaseUrl) {
 // Supabase-specific features (Storage, Realtime, etc.).
 const globalForDb = globalThis as unknown as { sql?: ReturnType<typeof postgres> };
 
-export const sql = globalForDb.sql ?? postgres(databaseUrl, { max: 4 });
+const connection = databaseConnection(databaseUrl);
+export const sql = globalForDb.sql ?? postgres(connection.url, connection.options);
 
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.sql = sql;
-}
+// Reuse the pool in every environment. Separate server bundles can evaluate
+// this module more than once within the same process in production too.
+globalForDb.sql = sql;

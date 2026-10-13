@@ -1,0 +1,143 @@
+[thumbnail] Failed for file 3ce24679-b168-491e-83d2-09e4da84b679 Error: ffprobe exited with code 1
+ffprobe version 2023-02-13-git-2296078397-essentials_build-www.gyan.dev Copyright (c) 2007-2023 the FFmpeg developers
+  built with gcc 12.2.0 (Rev10, Built by MSYS2 project)
+  configuration: --enable-gpl --enable-version3 --enable-static --disable-w32threads --disable-autodetect --enable-fontconfig --enable-iconv --enable-gnutls --enable-libxml2 --enable-gmp --enable-bzlib --enable-lzma --enable-zlib --enable-libsrt --enable-libssh --enable-libzmq --enable-avisynth --enable-sdl2 --enable-libwebp --enable-libx264 --enable-libx265 --enable-libxvid --enable-libaom --enable-libopenjpeg --enable-libvpx --enable-mediafoundation --enable-libass --enable-libfreetype --enable-libfribidi --enable-libvidstab --enable-libvmaf --enable-libzimg --enable-amf --enable-cuda-llvm --enable-cuvid --enable-ffnvcodec --enable-nvdec --enable-nvenc --enable-d3d11va --enable-dxva2 --enable-libvpl --enable-libgme --enable-libopenmpt --enable-libopencore-amrwb --enable-libmp3lame --enable-libtheora --enable-libvo-amrwbenc --enable-libgsm --enable-libopencore-amrnb --enable-libopus --enable-libspeex --enable-libvorbis --enable-librubberband
+  libavutil      58.  1.100 / 58.  1.100
+  libavcodec     60.  2.100 / 60.  2.100
+  libavformat    60.  2.100 / 60.  2.100
+  libavdevice    60.  0.100 / 60.  0.100
+  libavfilter     9.  1.100 /  9.  1.100
+  libswscale      7.  0.100 /  7.  0.100
+  libswresample   4.  9.100 /  4.  9.100
+  libpostproc    57.  0.100 / 57.  0.100
+[tcp @ 00000231469c7c40] Failed to resolve hostname wraptor-vault.s3.eu-west-2.amazonaws.com: The name does not resolve for the supplied parameters
+https://wraptor-vault.s3.eu-west-2.amazonaws.com/footage/0d8bfa8f-4b0c-46a2-a020-f6e924637a5e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIAUZT4IZSPFHHNAUM4%2F20261006%2Feu-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261006T124331Z&X-Amz-Expires=3600&X-Amz-Signature=174bd5259c15e6c30a700674830e225714d55eccff0cbd7aa1a5839b9787f1f6&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject: I/O error
+
+    at <unknown> (https://wraptor-vault.s3.eu-west-2.amazonaws.com/footage/0d8bfa8f-4b0c-46a2-a020-f6e924637a5e?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIAUZT4IZSPFHHNAUM4%2F20261006%2Feu-west-2%2Fs3%2Faws4_request&X-Amz-Date=20261006T124331Z&X-Amz-Expires=3600&X-Amz-Signature=174bd5259c15e6c30a700674830e225714d55eccff0cbd7aa1a5839b9787f1f6&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject: I/O error)
+[thumbnail] Failed for file 91ef0099-4434-4be5-8bc8-861e8b3b1d24 Error: getaddrinfo ENOTFOUND wraptor-vault.s3.eu-west-2.amazonaws.com
+    at ignore-listed frames {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'wraptor-vault.s3.eu-west-2.amazonaws.com',
+  '$metadata': { attempts: 3, totalRetryDelay: 107 }
+}
+⨯ Error: read ECONNRESET
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  errno: -4077,
+  code: 'ECONNRESET',
+  syscall: 'read'
+}
+[thumbnail] Failed for file 345aea82-b312-4d1f-baa1-af36f95a64e4 Error: getaddrinfo ENOTFOUND aws-0-eu-west-1.pooler.supabase.com
+    at listFolders (src\lib\db\queries.ts:16:13)
+  14 |
+  15 | export async function listFolders(parentId: string | null): Promise<Folder[]> {
+> 16 |   return sql<Folder[]>`
+     |             ^
+  17 |     select folder.*,
+  18 |       (select count(*)::int from folders child where child.parent_id = folder.id) as folder_count,
+  19 |       (select count(*)::int from files child {
+  errno: -3008,
+  code: 'ENOTFOUND',
+  syscall: 'getaddrinfo',
+  hostname: 'aws-0-eu-west-1.pooler.supabase.com'
+}
+⚠ [next]/internal/font/google/geist_a71539c9.module.css
+Warning: Error while requesting resource
+There was an issue establishing a connection while requesting https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/geist_a71539c9.module.css
+    [next]/internal/font/google/geist_a71539c9.js
+    ./src/app/layout.tsx
+
+
+⚠ [next]/internal/font/google/geist_mono_8d43a2aa.module.css
+Warning: Error while requesting resource
+There was an issue establishing a connection while requesting https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/geist_mono_8d43a2aa.module.css
+    [next]/internal/font/google/geist_mono_8d43a2aa.js
+    ./src/app/layout.tsx
+
+
+⚠ [next]/internal/font/google/geist_a71539c9.module.css
+Warning: next/font: warning:
+Failed to download Geist from Google Fonts. Using a fallback font instead.
+If you are offline or behind a proxy, self-host the font with next/font/local, or set HTTP_PROXY/HTTPS_PROXY so Next.js can reach fonts.googleapis.com.
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/geist_a71539c9.module.css
+    [next]/internal/font/google/geist_a71539c9.js
+    ./src/app/layout.tsx
+
+
+⚠ [next]/internal/font/google/geist_mono_8d43a2aa.module.css
+Warning: next/font: warning:
+Failed to download Geist Mono from Google Fonts. Using a fallback font instead.
+If you are offline or behind a proxy, self-host the font with next/font/local, or set HTTP_PROXY/HTTPS_PROXY so Next.js can reach fonts.googleapis.com.
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/geist_mono_8d43a2aa.module.css
+    [next]/internal/font/google/geist_mono_8d43a2aa.js
+    ./src/app/layout.tsx
+
+
+⚠ [next]/internal/font/google/geist_a71539c9.module.css
+Warning: Error while requesting resource
+There was an issue establishing a connection while requesting https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/geist_a71539c9.module.css
+    [next]/internal/font/google/geist_a71539c9.js
+    ./src/app/layout.tsx
+
+
+⚠ [next]/internal/font/google/geist_mono_8d43a2aa.module.css
+Warning: Error while requesting resource
+There was an issue establishing a connection while requesting https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&display=swap
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/geist_mono_8d43a2aa.module.css
+    [next]/internal/font/google/geist_mono_8d43a2aa.js
+    ./src/app/layout.tsx
+
+
+⚠ [next]/internal/font/google/geist_a71539c9.module.css
+Warning: next/font: warning:
+Failed to download Geist from Google Fonts. Using a fallback font instead.
+If you are offline or behind a proxy, self-host the font with next/font/local, or set HTTP_PROXY/HTTPS_PROXY so Next.js can reach fonts.googleapis.com.
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/geist_a71539c9.module.css
+    [next]/internal/font/google/geist_a71539c9.js
+    ./src/app/layout.tsx
+
+
+⚠ [next]/internal/font/google/geist_mono_8d43a2aa.module.css
+Warning: next/font: warning:
+Failed to download Geist Mono from Google Fonts. Using a fallback font instead.
+If you are offline or behind a proxy, self-host the font with next/font/local, or set HTTP_PROXY/HTTPS_PROXY so Next.js can reach fonts.googleapis.com.
+
+Import trace:
+  Server Component:
+    [next]/internal/font/google/geist_mono_8d43a2aa.module.css
+    [next]/internal/font/google/geist_mono_8d43a2aa.js
+    ./src/app/layout.tsx
+
+

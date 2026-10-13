@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test:tiles": "node scripts/check-vault-clicks.cjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -41,6 +42,7 @@
     "yet-another-react-lightbox": "^3.32.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/adm-zip": "^0.5.8",
     "@types/mime-types": "^3.0.1",

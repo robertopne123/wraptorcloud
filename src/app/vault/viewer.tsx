@@ -152,7 +152,7 @@ export function MediaViewer({
       }}
       controller={{ closeOnBackdropClick: true, closeOnEscape: true }}
       video={{ controls: true, autoPlay: false }}
-      styles={allowNotes ? { container: { right: "min(360px, 45vw)", overflow: "visible" } } : undefined}
+      styles={allowNotes ? { container: { right: "min(360px, 45vw)", overflow: "visible" } } : {}}
       render={{
         slide: renderSlide,
         controls: () => allowNotes && files[index]?.media_type !== "other" && files[index]
