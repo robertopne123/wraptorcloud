@@ -1,34 +1,16 @@
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { contentDispositionAttachment } from "@/lib/media";
 import type { FileRecord } from "@/lib/db/types";
-import { createHetznerObjectStorage, createObjectStorage } from "./storage-config";
+import { createHetznerObjectStorage } from "./storage-config";
 
-export const { client: s3Client, bucket: S3_BUCKET_NAME } = createObjectStorage();
-const currentStorage = { client: s3Client, bucket: S3_BUCKET_NAME };
-let hetznerStorage: ReturnType<typeof createHetznerObjectStorage> | undefined;
-
-export function storageForWrite(key: string) {
-  return key.startsWith("hetzner/")
-    ? (hetznerStorage ??= createHetznerObjectStorage())
-    : currentStorage;
-}
-
-async function storageForRead(key: string) {
-  const storage = storageForWrite(key);
-  if (process.env.VAULT_OBJECT_STORAGE !== "hetzner" || key.startsWith("hetzner/")) return storage;
-  const target = hetznerStorage ??= createHetznerObjectStorage();
-  try {
-    await target.client.send(new HeadObjectCommand({ Bucket: target.bucket, Key: key }));
-    return target;
-  } catch (error) {
-    if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode !== 404) throw error;
-    return storage;
-  }
+let objectStorage: ReturnType<typeof createHetznerObjectStorage> | undefined;
+export function getObjectStorage() {
+  return objectStorage ??= createHetznerObjectStorage();
 }
 
 export async function openObject(key: string, signal?: AbortSignal) {
-  const { client, bucket } = await storageForRead(key);
+  const { client, bucket } = getObjectStorage();
   return client.send(new GetObjectCommand({ Bucket: bucket, Key: key }), { abortSignal: signal });
 }
 
@@ -47,14 +29,14 @@ export async function getObjectBuffer(key: string, maxBytes = Infinity): Promise
 }
 
 export async function uploadBuffer(key: string, buffer: Buffer, contentType: string): Promise<void> {
-  const { client, bucket } = storageForWrite(key);
+  const { client, bucket } = getObjectStorage();
   await client.send(
     new PutObjectCommand({ Bucket: bucket, Key: key, Body: buffer, ContentType: contentType }),
   );
 }
 
 export async function presignKeyUrl(key: string): Promise<string> {
-  const { client, bucket } = await storageForRead(key);
+  const { client, bucket } = getObjectStorage();
   const command = new GetObjectCommand({ Bucket: bucket, Key: key });
   return getSignedUrl(client, command, { expiresIn: VIEW_URL_EXPIRY_SECONDS });
 }
@@ -64,7 +46,7 @@ export async function presignFileViewUrl(
   file: FileRecord,
   { attachment, contentType }: { attachment: boolean; contentType?: string },
 ): Promise<string> {
-  const { client, bucket } = await storageForRead(file.s3_key);
+  const { client, bucket } = getObjectStorage();
   const command = new GetObjectCommand({
     Bucket: bucket,
     Key: file.s3_key,

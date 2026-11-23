@@ -4,14 +4,14 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NextResponse } from "next/server";
-import { storageForWrite } from "@/lib/s3";
+import { getObjectStorage } from "@/lib/s3";
 import { uploadPartSize } from "@/lib/uploads/types";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
-  const { action, id, size, contentType, uploadId: sessionId, partNumber, providerAware } = body ?? {};
+  const { action, id, size, contentType, uploadId: sessionId, partNumber } = body ?? {};
   if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
     || typeof size !== "number" || !Number.isSafeInteger(size) || size < 0 || size > 5 * 1024 ** 4
     || typeof contentType !== "string" || contentType.length === 0) {
@@ -20,12 +20,11 @@ export async function POST(request: Request) {
   if (!["start", "part", "complete"].includes(action)) {
     return NextResponse.json({ error: "Invalid upload action" }, { status: 400 });
   }
-  const hetznerSession = typeof sessionId === "string" && sessionId.startsWith("hetzner:");
-  const startOnHetzner = !sessionId && providerAware === true && size > 0 && process.env.VAULT_OBJECT_STORAGE === "hetzner";
-  const key = `${hetznerSession || startOnHetzner ? "hetzner/" : ""}footage/${id}`;
-  const uploadId = hetznerSession ? sessionId.slice("hetzner:".length) : sessionId;
-  const { client: s3Client, bucket } = storageForWrite(key);
-  const params = { Bucket: bucket, Key: key };
+  // During the cutover these sessions used a separate object-key prefix.
+  const prefixedSession = typeof sessionId === "string" && sessionId.startsWith("hetzner:");
+  const uploadId = prefixedSession ? sessionId.slice("hetzner:".length) : sessionId;
+  const { client: s3Client, bucket } = getObjectStorage();
+  const params = { Bucket: bucket, Key: `${prefixedSession ? "hetzner/" : ""}footage/${id}` };
   const expectedParts = Math.ceil(size / uploadPartSize(size));
 
   try {
@@ -39,8 +38,7 @@ export async function POST(request: Request) {
     // uploader has object access but no bucket-listing permission.
     if (action === "start" && !uploadId) {
       const result = await s3Client.send(new CreateMultipartUploadCommand({ ...params, ContentType: contentType }));
-      const nextId = startOnHetzner && result.UploadId ? `hetzner:${result.UploadId}` : result.UploadId;
-      return NextResponse.json({ uploadId: nextId, parts: [], complete: false });
+      return NextResponse.json({ uploadId: result.UploadId, parts: [], complete: false });
     }
     if (typeof uploadId !== "string" || uploadId.length === 0) {
       return NextResponse.json({ error: "uploadId is required" }, { status: 400 });

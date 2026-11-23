@@ -1,19 +1,15 @@
 import { loadEnvConfig } from "@next/env";
-import { GetObjectCommand, HeadBucketCommand, ListPartsCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, HeadBucketCommand, ListPartsCommand } from "@aws-sdk/client-s3";
+import { createHetznerObjectStorage } from "../src/lib/storage-config";
 
 loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
-const client = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: { accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? "", secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "" },
-  maxAttempts: 1,
-  requestHandler: { connectionTimeout: 10000, requestTimeout: 15000 },
-});
+const { client, bucket } = createHetznerObjectStorage();
 
 async function main() {
   for (const [check, run] of [
-    ["bucket", () => client.send(new HeadBucketCommand({ Bucket: process.env.S3_BUCKET_NAME }))],
-    ["missing-object", () => client.send(new GetObjectCommand({ Bucket: process.env.S3_BUCKET_NAME, Key: "footage/__connection_check__" }))],
-    ["multipart-permission", () => client.send(new ListPartsCommand({ Bucket: process.env.S3_BUCKET_NAME,
+    ["bucket", () => client.send(new HeadBucketCommand({ Bucket: bucket }))],
+    ["missing-object", () => client.send(new GetObjectCommand({ Bucket: bucket, Key: "footage/__connection_check__" }))],
+    ["multipart-permission", () => client.send(new ListPartsCommand({ Bucket: bucket,
       Key: "footage/__connection_check__", UploadId: "connection-check" }))],
   ] as const) {
     try {

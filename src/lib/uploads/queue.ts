@@ -303,7 +303,7 @@ export class UploadQueue {
       } else {
         job.conflict = undefined; job.conflictAction = undefined;
       }
-      const details = () => ({ id: job.id, size: job.size, contentType: job.contentType, uploadId: job.uploadId, providerAware: true });
+      const details = () => ({ id: job.id, size: job.size, contentType: job.contentType, uploadId: job.uploadId });
       let session: Session;
       try {
         session = await this.retryRequest(() => this.deps.request<Session>("/api/uploads", { ...details(), action: "start" }));

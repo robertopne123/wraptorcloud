@@ -9,6 +9,7 @@ import dotenv from "dotenv";
 import { google } from "googleapis";
 import postgres from "postgres";
 import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import { createHetznerObjectStorage } from "../src/lib/storage-config";
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { mediaTypeFromContentType } from "../src/lib/media.js";
@@ -365,10 +366,6 @@ async function insertFile(
 
 // ── S3 helpers ────────────────────────────────────────────────────────────────
 
-function makeS3(region: string, accessKeyId: string, secretAccessKey: string) {
-  return new S3Client({ region, credentials: { accessKeyId, secretAccessKey } });
-}
-
 // Streaming multipart upload — handles files of any size without buffering.
 async function streamToS3(
   s3: S3Client,
@@ -552,10 +549,6 @@ async function main() {
 
   const keyPath = requireEnv("GOOGLE_SERVICE_ACCOUNT_KEY_PATH");
   const databaseUrl = requireEnv("DATABASE_URL");
-  const awsRegion = requireEnv("AWS_REGION");
-  const awsAccessKeyId = requireEnv("AWS_ACCESS_KEY_ID");
-  const awsSecretAccessKey = requireEnv("AWS_SECRET_ACCESS_KEY");
-  const s3Bucket = requireEnv("S3_BUCKET_NAME");
 
   // Google Drive client
   const auth = new google.auth.GoogleAuth({
@@ -565,7 +558,7 @@ async function main() {
   const drive = google.drive({ version: "v3", auth });
 
   const sql = makeDb(databaseUrl);
-  const s3 = makeS3(awsRegion, awsAccessKeyId, awsSecretAccessKey);
+  const { client: s3, bucket: s3Bucket } = createHetznerObjectStorage();
 
   console.log(`\nWraptor Vault — Drive Migration`);
   console.log(`Drive folder: ${rootDriveFolderId}`);

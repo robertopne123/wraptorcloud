@@ -38,7 +38,7 @@ cp .env.local.example .env.local
 | --- | --- |
 | `DATABASE_URL` | Direct Postgres connection string. This is what the app, migrations, and seed script all query through (`src/lib/db/client.ts`) |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Reserved for Supabase-specific features (Storage, Realtime) in a later stage — `src/lib/db/supabase.ts` is a ready client, not yet used for queries |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_REGION` / `S3_BUCKET_NAME` | Used by `src/lib/s3.ts` to sign upload URLs |
+| `HETZNER_S3_ENDPOINT` / `HETZNER_S3_REGION` / `HETZNER_S3_BUCKET` / `HETZNER_S3_ACCESS_KEY_ID` / `HETZNER_S3_SECRET_ACCESS_KEY` | Hetzner Object Storage connection used for Vault reads and writes |
 | `SEED_USER_1_*` / `SEED_USER_2_*` | Name/email for the two seeded user rows (consumed only by `npm run db:seed`) |
 
 ### 2. Install dependencies
@@ -98,15 +98,13 @@ Example bucket CORS configuration:
 ]
 ```
 
-## Hetzner Object Storage preview
+## Hetzner Object Storage
 
-Use a private Hetzner bucket and an isolated Postgres database with the Vault
-migrations applied. The Vault still uses a single bucket per deployment, so
-pointing this preview at the production database would resolve existing S3 keys
-against the wrong bucket. Hetzner preview mode is rejected in Vercel production.
+Use a private Hetzner bucket. The bucket must contain the object keys referenced
+by the deployment's Postgres database. Use a separate bucket and database for
+isolated testing.
 
 ```dotenv
-VAULT_OBJECT_STORAGE=hetzner-preview
 HETZNER_S3_ENDPOINT=https://fsn1.your-objectstorage.com
 HETZNER_S3_REGION=fsn1
 HETZNER_S3_BUCKET=your-private-preview-bucket
@@ -120,9 +118,7 @@ server environment. Set bucket CORS for the exact Vault preview origin with
 and browser previews. Use test footage to verify multipart resume, range seeking,
 thumbnails, attachment downloads, and ZIP downloads before any production rollout.
 
-The default mode is `aws`. The standalone Drive importer and `check-storage.ts`
-still use their AWS configuration. Storage Box, mixed-provider reads, and data
-copying are separate cutover steps.
+The Vault, Drive importer and storage checks all use this Hetzner configuration.
 
 ### Copy the AWS bucket to Hetzner
 
@@ -167,16 +163,10 @@ unfinished multipart uploads are outside its scope. It leaves AWS and Supabase
 intact. Run a final reconciliation after writes to AWS have stopped before
 switching the live Vault to Hetzner.
 
-### Production storage cutover
-
-Deploy with both providers configured. Keep `VAULT_OBJECT_STORAGE=aws` until
-the copy and production-origin CORS are verified. Set `VAULT_OBJECT_STORAGE=hetzner`
-and redeploy to prefer verified migrated keys on Hetzner and route new multipart
-uploads from updated clients there. Legacy clients, in-progress AWS sessions,
-zero-byte uploads and the legacy single-PUT API still use AWS. Legacy reads fall
-back to AWS on a Hetzner object miss. New Hetzner objects and thumbnails have a
-`hetzner/` key prefix and remain readable if the mode is switched back to `aws`.
-Keep the Hetzner credentials and this code deployed during a rollback.
+Existing objects keep their keys, including the `hetzner/` prefix used during
+the transition. The browser can resume those Hetzner multipart sessions. If an
+old AWS multipart session was interrupted, retrying starts a new Hetzner upload
+from the source saved in the browser.
 
 ## Project structure
 
@@ -247,7 +237,7 @@ S3 lifecycle rule to abort old incomplete multipart uploads if abandoned jobs
 should be cleaned up automatically.
 
 Run the upload recovery tests with `npm run test:uploads`.
-For AWS diagnostics, run `npx tsx scripts/check-storage.ts` (read-only).
+For Hetzner diagnostics, run `npx tsx scripts/check-storage.ts` (read-only).
 `npx tsx scripts/check-upload.ts` performs a live chunk upload/recovery check
 and aborts its temporary multipart session; it also requires
 `s3:AbortMultipartUpload`. It creates no completed file or database record.

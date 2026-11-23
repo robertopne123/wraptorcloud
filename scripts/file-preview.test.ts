@@ -111,12 +111,14 @@ test("archive limits reject expansion bombs, password flags and conflicting path
 });
 
 test("document previews render text, Word content and workbook sheets from storage", async () => {
-  process.env.AWS_REGION = "eu-west-1";
-  process.env.AWS_ACCESS_KEY_ID = "test-only";
-  process.env.AWS_SECRET_ACCESS_KEY = "test-only";
-  process.env.S3_BUCKET_NAME = "test-only";
+  process.env.HETZNER_S3_ENDPOINT = "https://nbg1.your-objectstorage.com";
+  process.env.HETZNER_S3_REGION = "nbg1";
+  process.env.HETZNER_S3_ACCESS_KEY_ID = "test-only";
+  process.env.HETZNER_S3_SECRET_ACCESS_KEY = "test-only";
+  process.env.HETZNER_S3_BUCKET = "test-only";
   const { previewFile, archiveEntry } = await import("../src/lib/file-preview");
-  const { s3Client } = await import("../src/lib/s3");
+  const { getObjectStorage } = await import("../src/lib/s3");
+  const { client: s3Client } = getObjectStorage();
   const original = s3Client.send;
   let buffer: Buffer = Buffer.from("<script>text is rendered as text</script>");
   let reads = 0;

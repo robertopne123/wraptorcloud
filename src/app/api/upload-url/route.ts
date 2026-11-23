@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { s3Client, S3_BUCKET_NAME } from "@/lib/s3";
+import { getObjectStorage } from "@/lib/s3";
 
 const PRESIGNED_URL_EXPIRY_SECONDS = 10 * 60;
 
@@ -35,14 +35,15 @@ export async function POST(request: Request) {
 
   const fileId = randomUUID();
   const s3Key = `footage/${fileId}${extensionFromFilename(filename)}`;
+  const { client, bucket } = getObjectStorage();
 
   const command = new PutObjectCommand({
-    Bucket: S3_BUCKET_NAME,
+    Bucket: bucket,
     Key: s3Key,
     ContentType: contentType,
   });
 
-  const uploadUrl = await getSignedUrl(s3Client, command, {
+  const uploadUrl = await getSignedUrl(client, command, {
     expiresIn: PRESIGNED_URL_EXPIRY_SECONDS,
   });
 

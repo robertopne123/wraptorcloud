@@ -8,7 +8,8 @@ loadEnvConfig(process.cwd(), true, { info() {}, error() {} });
 
 async function main() {
   const { POST } = await import("../src/app/api/uploads/route");
-  const { s3Client, S3_BUCKET_NAME } = await import("../src/lib/s3");
+  const { getObjectStorage } = await import("../src/lib/s3");
+  const { client: s3Client, bucket } = getObjectStorage();
   const id = randomUUID();
   const source = Buffer.from("Wraptor upload connection check");
   let uploadId: string | undefined;
@@ -32,7 +33,7 @@ async function main() {
     console.log("Session creation, signed chunk upload and recovery succeeded.");
   } finally {
     if (uploadId) {
-      await s3Client.send(new AbortMultipartUploadCommand({ Bucket: S3_BUCKET_NAME, Key: `footage/${id}`, UploadId: uploadId }));
+      await s3Client.send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: `footage/${id}`, UploadId: uploadId }));
       console.log("Temporary multipart upload aborted; no object or database row created.");
     }
     s3Client.destroy();
