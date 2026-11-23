@@ -98,6 +98,86 @@ Example bucket CORS configuration:
 ]
 ```
 
+## Hetzner Object Storage preview
+
+Use a private Hetzner bucket and an isolated Postgres database with the Vault
+migrations applied. The Vault still uses a single bucket per deployment, so
+pointing this preview at the production database would resolve existing S3 keys
+against the wrong bucket. Hetzner preview mode is rejected in Vercel production.
+
+```dotenv
+VAULT_OBJECT_STORAGE=hetzner-preview
+HETZNER_S3_ENDPOINT=https://fsn1.your-objectstorage.com
+HETZNER_S3_REGION=fsn1
+HETZNER_S3_BUCKET=your-private-preview-bucket
+HETZNER_S3_ACCESS_KEY_ID=your-access-key
+HETZNER_S3_SECRET_ACCESS_KEY=your-secret-key
+```
+
+Use the endpoint and region shown for your bucket. Keep the credentials in the
+server environment. Set bucket CORS for the exact Vault preview origin with
+`PUT`, `GET`, and `HEAD` allowed and request headers allowed for signed uploads
+and browser previews. Use test footage to verify multipart resume, range seeking,
+thumbnails, attachment downloads, and ZIP downloads before any production rollout.
+
+The default mode is `aws`. The standalone Drive importer and `check-storage.ts`
+still use their AWS configuration. Storage Box, mixed-provider reads, and data
+copying are separate cutover steps.
+
+### Copy the AWS bucket to Hetzner
+
+Run from a machine with access to both providers. Set the existing `AWS_REGION`
+and `S3_BUCKET_NAME` to the AWS source, and configure an AWS profile, role or
+environment credentials with `s3:ListBucket` and `s3:GetObject` access. Set the
+five `HETZNER_S3_*` values above for the private destination bucket. The Hetzner
+key needs bucket access, object reads and writes, and multipart abort permission.
+Use an otherwise idle destination bucket during the copy.
+
+```powershell
+npm run migrate:hetzner
+npm run migrate:hetzner -- --copy --watch
+```
+
+The first command checks access and counts source objects and bytes. Both commands
+accept `--prefix` to scope a run. For example, `--prefix footage/` excludes
+thumbnails, so use the full bucket for the Vault cutover. The copy defaults to one
+object at a time. Use `--transfers 4` to run four files concurrently. Each transfer
+uses multipart for large files, preserves keys and common
+content headers, and verifies size and SHA-256 from the destination. Reruns
+verify existing keys and continue with missing ones. A mismatch or failed copy
+is reported and returns a nonzero exit status. Resuming a run works at the
+object level. A partially transferred object starts over on the next run.
+
+With `--watch`, open the local dashboard URL printed by the command to see the
+current file, copy and verification progress, counts and recent results. The
+dashboard listens on localhost and stays available after the run. Press Ctrl+C
+in the migration terminal once you've reviewed the results. The Vault can run
+locally alongside it.
+
+To keep the transfer off your laptop, run the command on an SSH-accessible VM
+with outbound access to AWS and Hetzner. Use a persistent terminal session such
+as `tmux`, and configure the credentials on the VM. Keep the dashboard on
+loopback. If it prints port `53123`, run
+`ssh -N -L 53123:127.0.0.1:53123 user@vm` from your laptop and open
+`http://127.0.0.1:53123/`. Closing the tunnel pauses dashboard access only.
+
+The command copies the currently visible objects, including Vault historical
+versions that have their own keys. AWS bucket version history, policies and
+unfinished multipart uploads are outside its scope. It leaves AWS and Supabase
+intact. Run a final reconciliation after writes to AWS have stopped before
+switching the live Vault to Hetzner.
+
+### Production storage cutover
+
+Deploy with both providers configured. Keep `VAULT_OBJECT_STORAGE=aws` until
+the copy and production-origin CORS are verified. Set `VAULT_OBJECT_STORAGE=hetzner`
+and redeploy to prefer verified migrated keys on Hetzner and route new multipart
+uploads from updated clients there. Legacy clients, in-progress AWS sessions,
+zero-byte uploads and the legacy single-PUT API still use AWS. Legacy reads fall
+back to AWS on a Hetzner object miss. New Hetzner objects and thumbnails have a
+`hetzner/` key prefix and remain readable if the mode is switched back to `aws`.
+Keep the Hetzner credentials and this code deployed during a rollback.
+
 ## Project structure
 
 ```

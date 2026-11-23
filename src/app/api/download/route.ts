@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { ZipArchive } from "archiver";
 import { PassThrough, Readable } from "stream";
-import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { listFilesForDownload } from "@/lib/db/queries";
-import { s3Client, S3_BUCKET_NAME } from "@/lib/s3";
+import { openObject } from "@/lib/s3";
 import { contentDispositionAttachment } from "@/lib/media";
 
 export async function POST(request: Request) {
@@ -48,10 +47,7 @@ export async function POST(request: Request) {
   (async () => {
     for (const file of files) {
         if (controller.signal.aborted) return;
-        const { Body } = await s3Client.send(
-          new GetObjectCommand({ Bucket: S3_BUCKET_NAME, Key: file.s3_key }),
-          { abortSignal: controller.signal },
-        );
+        const { Body } = await openObject(file.s3_key, controller.signal);
         if (!Body) throw new Error(`No data returned for file ${file.id}`);
         const source = Body as unknown as Readable;
         sources.add(source);

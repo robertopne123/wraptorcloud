@@ -174,9 +174,10 @@ export class FileConflictError extends Error {
 }
 
 export async function checkUploadConflict(s3Key: string, name: string, folderId: string | null) {
+  const keys = [s3Key, `hetzner/${s3Key}`];
   const completed = await sql<FileRecord[]>`
     select f.* from files f left join upload_receipts r on r.file_id = f.id
-    where f.s3_key = ${s3Key} or r.s3_key = ${s3Key} limit 1
+    where f.s3_key in ${sql(keys)} or r.s3_key in ${sql(keys)} limit 1
   `;
   if (completed[0]) return { completed: completed[0], file: null };
   const existing = await sql<FileRecord[]>`

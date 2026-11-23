@@ -4,7 +4,7 @@ import { uploadPartSize, type ConflictAction, type UploadJob } from "./types";
 import type { UploadDestination } from "./folders";
 
 type Storage = typeof uploadStorage;
-type Session = { uploadId?: string; parts?: number[]; complete: boolean };
+type Session = { uploadId?: string; parts?: number[]; complete: boolean; s3Key?: string };
 type Dependencies = {
   storage: Storage;
   request: <T>(path: string, body: unknown) => Promise<T>;
@@ -303,7 +303,7 @@ export class UploadQueue {
       } else {
         job.conflict = undefined; job.conflictAction = undefined;
       }
-      const details = () => ({ id: job.id, size: job.size, contentType: job.contentType, uploadId: job.uploadId });
+      const details = () => ({ id: job.id, size: job.size, contentType: job.contentType, uploadId: job.uploadId, providerAware: true });
       let session: Session;
       try {
         session = await this.retryRequest(() => this.deps.request<Session>("/api/uploads", { ...details(), action: "start" }));
@@ -337,10 +337,10 @@ export class UploadQueue {
           await this.save(job);
           this.update(job);
         }
-        await this.retryRequest(() => this.deps.request("/api/uploads", { ...details(), action: "complete" }));
+        session = await this.retryRequest(() => this.deps.request<Session>("/api/uploads", { ...details(), action: "complete" }));
       }
       const { file } = await this.retryRequest(() => this.deps.request<{ file: FileRecord }>("/api/files", {
-        s3Key: `footage/${job.id}`, displayName: job.name, contentType: job.contentType,
+        s3Key: session?.s3Key ?? `footage/${job.id}`, displayName: job.name, contentType: job.contentType,
         sizeBytes: job.size, folderId: job.folderId,
         conflictAction: job.conflictAction, targetFileId: job.conflict?.id, expectedS3Key: job.conflict?.s3_key,
       }));

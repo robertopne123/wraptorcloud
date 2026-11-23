@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { S3Client } from "@aws-sdk/client-s3";
 import { uploadPartSize } from "../src/lib/uploads/types";
 
 test("multipart upload API", async (t) => {
@@ -26,6 +27,44 @@ test("multipart upload API", async (t) => {
     }));
   }
   try {
+    await t.test("keeps multipart sessions on their original provider across cutover and rollback", async () => {
+      const env = {
+        VAULT_OBJECT_STORAGE: "hetzner",
+        HETZNER_S3_ENDPOINT: "https://nbg1.your-objectstorage.com",
+        HETZNER_S3_REGION: "nbg1",
+        HETZNER_S3_BUCKET: "hetzner-test-only",
+        HETZNER_S3_ACCESS_KEY_ID: "test-only",
+        HETZNER_S3_SECRET_ACCESS_KEY: "test-only",
+      };
+      const previous = Object.fromEntries(Object.keys(env).map((key) => [key, process.env[key]]));
+      const previousSend = S3Client.prototype.send;
+      Object.assign(process.env, env);
+      S3Client.prototype.send = (async (command: { constructor: { name: string }; input: Record<string, unknown> }) => {
+        calls.push({ name: command.constructor.name, input: command.input });
+        return command.constructor.name === "CreateMultipartUploadCommand" ? { UploadId: "new-session" }
+          : { Parts: [{ PartNumber: 1, Size: 10, ETag: "part" }] };
+      }) as typeof S3Client.prototype.send;
+      try {
+        calls.length = 0;
+        handle = () => ({ Parts: [] });
+        const legacy = await post({ action: "start", uploadId: "old-session", providerAware: true });
+        assert.equal((await legacy.json()).uploadId, "old-session");
+        assert.equal(calls.at(-1)?.input.Key, `footage/${id}`);
+        const fresh = await post({ action: "start", providerAware: true });
+        assert.equal((await fresh.json()).uploadId, "hetzner:new-session");
+        assert.equal(calls.at(-1)?.input.Bucket, "hetzner-test-only");
+        process.env.VAULT_OBJECT_STORAGE = "aws";
+        const complete = await post({ action: "complete", uploadId: "hetzner:new-session", providerAware: true });
+        assert.deepEqual(await complete.json(), { complete: true, s3Key: `hetzner/footage/${id}` });
+        assert.equal(calls.at(-1)?.input.UploadId, "new-session");
+      } finally {
+        S3Client.prototype.send = previousSend;
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    });
     await t.test("rejects malformed details before touching storage", async () => {
       calls.length = 0;
       assert.equal((await post({ action: "start", id: "../other-file" })).status, 400);

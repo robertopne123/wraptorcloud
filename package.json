@@ -13,7 +13,8 @@
     "test:previews": "node --import tsx --test scripts/file-preview.test.ts",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
-    "migrate:drive": "tsx scripts/migrate-from-drive.ts"
+    "migrate:drive": "tsx scripts/migrate-from-drive.ts",
+    "migrate:hetzner": "tsx scripts/migrate-to-hetzner.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1095.0",

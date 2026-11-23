@@ -33,7 +33,8 @@ async function generateThumbnail(
   s3Key: string,
   mediaType: MediaType,
 ): Promise<void> {
-  const thumbnailKey = `thumbnails/${fileId}-${createHash("sha256").update(s3Key).digest("hex").slice(0, 24)}.jpg`;
+  const prefix = s3Key.startsWith("hetzner/") ? "hetzner/" : "";
+  const thumbnailKey = `${prefix}thumbnails/${fileId}-${createHash("sha256").update(s3Key).digest("hex").slice(0, 24)}.jpg`;
 
   if (mediaType === "video") {
     // Pass a presigned URL so ffmpeg can range-request the file without us

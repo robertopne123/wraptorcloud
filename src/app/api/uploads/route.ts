@@ -4,14 +4,14 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { NextResponse } from "next/server";
-import { s3Client, S3_BUCKET_NAME } from "@/lib/s3";
+import { storageForWrite } from "@/lib/s3";
 import { uploadPartSize } from "@/lib/uploads/types";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
-  const { action, id, size, contentType, uploadId, partNumber } = body ?? {};
+  const { action, id, size, contentType, uploadId: sessionId, partNumber, providerAware } = body ?? {};
   if (typeof id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
     || typeof size !== "number" || !Number.isSafeInteger(size) || size < 0 || size > 5 * 1024 ** 4
     || typeof contentType !== "string" || contentType.length === 0) {
@@ -20,7 +20,12 @@ export async function POST(request: Request) {
   if (!["start", "part", "complete"].includes(action)) {
     return NextResponse.json({ error: "Invalid upload action" }, { status: 400 });
   }
-  const params = { Bucket: S3_BUCKET_NAME, Key: `footage/${id}` };
+  const hetznerSession = typeof sessionId === "string" && sessionId.startsWith("hetzner:");
+  const startOnHetzner = !sessionId && providerAware === true && size > 0 && process.env.VAULT_OBJECT_STORAGE === "hetzner";
+  const key = `${hetznerSession || startOnHetzner ? "hetzner/" : ""}footage/${id}`;
+  const uploadId = hetznerSession ? sessionId.slice("hetzner:".length) : sessionId;
+  const { client: s3Client, bucket } = storageForWrite(key);
+  const params = { Bucket: bucket, Key: key };
   const expectedParts = Math.ceil(size / uploadPartSize(size));
 
   try {
@@ -34,7 +39,8 @@ export async function POST(request: Request) {
     // uploader has object access but no bucket-listing permission.
     if (action === "start" && !uploadId) {
       const result = await s3Client.send(new CreateMultipartUploadCommand({ ...params, ContentType: contentType }));
-      return NextResponse.json({ uploadId: result.UploadId, parts: [], complete: false });
+      const nextId = startOnHetzner && result.UploadId ? `hetzner:${result.UploadId}` : result.UploadId;
+      return NextResponse.json({ uploadId: nextId, parts: [], complete: false });
     }
     if (typeof uploadId !== "string" || uploadId.length === 0) {
       return NextResponse.json({ error: "uploadId is required" }, { status: 400 });
@@ -59,7 +65,7 @@ export async function POST(request: Request) {
       marker = page.IsTruncated ? page.NextPartNumberMarker : undefined;
     } while (marker);
     if (action === "start") {
-      return NextResponse.json({ uploadId, parts: parts.map((part) => part.PartNumber), complete: false });
+      return NextResponse.json({ uploadId: sessionId, parts: parts.map((part) => part.PartNumber), complete: false });
     }
     const partSize = uploadPartSize(size);
     if (parts.length !== expectedParts || parts.some((part, index) =>
@@ -91,10 +97,10 @@ export async function POST(request: Request) {
     console.error("[uploads]", action, id, error);
     const failure = error as { name?: string; $metadata?: { httpStatusCode: number } };
     if (failure.name === "InvalidAccessKeyId" || failure.name === "SignatureDoesNotMatch") {
-      return NextResponse.json({ error: "AWS rejected the access key or secret key. Check the AWS credentials and restart the server." }, { status: 403 });
+      return NextResponse.json({ error: "Object storage rejected the upload signature. Check the storage configuration." }, { status: 403 });
     }
     if (failure.$metadata?.httpStatusCode === 403) {
-      return NextResponse.json({ error: "S3 denied this upload. Grant the AWS user s3:PutObject, s3:GetObject and s3:ListMultipartUploadParts on this bucket's objects." }, { status: 403 });
+      return NextResponse.json({ error: "Object storage denied the upload. Check the bucket permissions." }, { status: 403 });
     }
     return NextResponse.json({ error: "Storage temporarily unavailable. Please retry." }, { status: 503 });
   }
